@@ -53,7 +53,12 @@ describe('isFinalAcceptanceReady', () => {
 });
 
 describe('pickFinalDelivery', () => {
-  const report = { passedChecks: 3, summary: 'All three checks passed.', totalChecks: 3 };
+  const report = {
+    content: '# Final acceptance\n\nAll three checks passed.',
+    passedChecks: 3,
+    summary: 'All three checks passed.',
+    totalChecks: 3,
+  };
   const finding = (id: string, minute: number) => ({
     createdAt: new Date(2026, 8, 15, 22, minute),
     description: `结论：delivery ${id}`,
@@ -75,12 +80,22 @@ describe('pickFinalDelivery', () => {
         rounds: [round('r1', 'passed', report)],
       }),
     ).toEqual({
+      content: report.content,
       kind: 'report',
       passedChecks: 3,
       runId: 'r1',
-      summary: report.summary,
       totalChecks: 3,
     });
+  });
+
+  it('previews the report summary when the round has no full report text', () => {
+    expect(
+      pickFinalDelivery({
+        artifacts: [],
+        findings: [],
+        rounds: [round('r1', 'passed', { ...report, content: null })],
+      }),
+    ).toMatchObject({ content: report.summary, kind: 'report' });
   });
 
   /**
@@ -103,9 +118,9 @@ describe('pickFinalDelivery', () => {
         rounds: [round('r1', 'passed')],
       }),
     ).toEqual({
+      content: '结论：delivery f_new',
       kind: 'finding',
       nodeId: 'f_new',
-      summary: '结论：delivery f_new',
       title: '已交付 f_new',
     });
   });

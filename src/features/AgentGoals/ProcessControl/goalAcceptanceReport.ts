@@ -49,6 +49,7 @@ export const isFinalAcceptanceReady = (
 ): boolean => nodeStatus === 'resolved' && (state === 'awaitingAcceptance' || state === 'accepted');
 
 interface ReportLike {
+  content: string | null;
   passedChecks: number | null;
   summary: string | null;
   totalChecks: number | null;
@@ -72,14 +73,15 @@ interface FindingLike {
 
 export type FinalDelivery =
   | {
+      /** The full Markdown report, else its short summary. */
+      content: string | null;
       kind: 'report';
       passedChecks: number | null;
       runId: string;
-      summary: string | null;
       totalChecks: number | null;
     }
   | { agentDocumentId?: string; documentId: string; kind: 'document'; title: string | null }
-  | { kind: 'finding'; nodeId: string; summary: string | null; title: string };
+  | { content: string | null; kind: 'finding'; nodeId: string; title: string };
 
 /**
  * What the final acceptance delivered, in the order a reader trusts it: the
@@ -100,10 +102,10 @@ export const pickFinalDelivery = <Report extends ReportLike>(params: {
   const latest = latestAcceptanceReport(params.rounds);
   if (latest) {
     return {
+      content: latest.report.content || latest.report.summary,
       kind: 'report',
       passedChecks: latest.report.passedChecks,
       runId: latest.runId,
-      summary: latest.report.summary,
       totalChecks: latest.report.totalChecks,
     };
   }
@@ -125,9 +127,9 @@ export const pickFinalDelivery = <Report extends ReportLike>(params: {
   )[0];
   if (finding) {
     return {
+      content: finding.description,
       kind: 'finding',
       nodeId: finding.id,
-      summary: finding.description,
       title: finding.title,
     };
   }

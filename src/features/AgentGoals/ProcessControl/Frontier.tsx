@@ -23,7 +23,7 @@ import {
   isGoalAcceptanceTask,
   viewGateKind,
 } from './coordinatorCopy';
-import { GoalAcceptanceReportCard, GoalAcceptanceTag } from './GoalAcceptanceCard';
+import { GoalFinalAcceptance } from './GoalAcceptanceCard';
 import type { FrontierItem, GoalGraphView, GoalNodeView } from './goalGraphViewModel';
 import { useElapsed } from './useElapsed';
 
@@ -336,27 +336,18 @@ AcceptanceChip.displayName = 'GoalAcceptanceChip';
 const FrontierRow = memo<{
   actions: FrontierActions;
   canEdit: boolean;
-  goalId: string;
   item: FrontierItem;
   numbers: Map<string, number>;
   onSelect: (nodeId: string) => void;
   /** A gate's ledger is the ledger of the Task it was opened for. */
   subject?: GoalNodeView;
-}>(({ actions, canEdit, goalId, item, numbers, onSelect, subject }) => {
+}>(({ actions, canEdit, item, numbers, onSelect, subject }) => {
   const { t } = useTranslation('chat');
   const optionLabel = useOptionLabel();
   const [note, setNote] = useState('');
   const { view } = item;
   const { node } = view;
   const deps = view.dependsOn.map((id) => numbers.get(id)).filter(Boolean);
-  // The Goal's final acceptance becomes its report only once everything ran
-  // through: the acceptance Task finished and waits on its owner's sign-off.
-  // Before that (running, lost, failed, parked on a gate) it stays an ordinary
-  // row; the card itself also checks the latest round actually passed.
-  const finalAcceptance =
-    isGoalAcceptanceTask(view) && item.kind === 'done' && node.status === 'resolved'
-      ? view.acceptance
-      : undefined;
 
   // Coordinator-authored gates carry English strings; recognized shapes render
   // in the user's language, arbitrary gates keep their stored copy.
@@ -396,8 +387,7 @@ const FrontierRow = memo<{
   return (
     <Block
       clickable
-      // The finished final acceptance is the Goal's headline, not a fading row.
-      className={item.kind === 'done' && !finalAcceptance ? styles.dim : undefined}
+      className={item.kind === 'done' ? styles.dim : undefined}
       padding={12}
       variant={'borderless'}
       onClick={() => onSelect(node.id)}
@@ -421,21 +411,11 @@ const FrontierRow = memo<{
         )}
         <Flexbox flex={1} />
         <Flexbox horizontal align={'center'} gap={8} style={{ flex: 'none' }}>
-          {finalAcceptance ? (
-            <GoalAcceptanceTag acceptance={finalAcceptance} nodeStatus={node.status} />
-          ) : (
-            <AcceptanceChip view={view} />
-          )}
+          <AcceptanceChip view={view} />
           {item.kind === 'running' && <RunningClock startedAt={view.startedAt} />}
           {item.kind === 'done' && <DoneTime view={view} />}
         </Flexbox>
       </Flexbox>
-
-      {finalAcceptance && (
-        <Flexbox className={styles.body} gap={8}>
-          <GoalAcceptanceReportCard acceptance={finalAcceptance} goalId={goalId} view={view} />
-        </Flexbox>
-      )}
 
       {item.rank === 0 && (
         // The expanded body is READ-ONLY content — why it stopped and what each
@@ -522,6 +502,12 @@ const Frontier = memo<FrontierProps>(({ actions, canEdit, graph, onSelect, plann
     graph.nodes.filter((view) => view.seq !== undefined).map((view) => [view.node.id, view.seq!]),
   );
   const achieved = graph.goal.status === 'achieved';
+  // Once the Goal's final acceptance finished, its acceptance document is what
+  // the owner reads next, so it takes the task list's place (the component
+  // keeps the list until the latest round is confirmed passed).
+  const finalAcceptanceView = graph.nodes.find(
+    (view) => isGoalAcceptanceTask(view) && view.node.status === 'resolved' && !!view.acceptance,
+  );
 
   return (
     <Flexbox gap={8}>
@@ -542,75 +528,77 @@ const Frontier = memo<FrontierProps>(({ actions, canEdit, graph, onSelect, plann
         {canEdit && <AddTaskButton onAdd={actions.addTask} />}
       </Flexbox>
 
-      <div className={styles.list}>
-        <Block gap={0} padding={2} variant={'borderless'}>
-          {graph.frontier.length === 0 &&
-            (planning ? (
-              <Flexbox horizontal align={'center'} gap={10} padding={12}>
-                <RunningGlyph size={16} />
-                <Flexbox gap={2}>
-                  <Text weight={500}>{t('goalProcess.planning.title')}</Text>
+      <GoalFinalAcceptance goalId={graph.goal.id} view={finalAcceptanceView}>
+        <div className={styles.list}>
+          <Block gap={0} padding={2} variant={'borderless'}>
+            {graph.frontier.length === 0 &&
+              (planning ? (
+                <Flexbox horizontal align={'center'} gap={10} padding={12}>
+                  <RunningGlyph size={16} />
+                  <Flexbox gap={2}>
+                    <Text weight={500}>{t('goalProcess.planning.title')}</Text>
+                    <Text fontSize={12} type={'secondary'}>
+                      {t('goalProcess.planning.description')}
+                    </Text>
+                  </Flexbox>
+                </Flexbox>
+              ) : (
+                <Flexbox gap={2} padding={12}>
+                  <Text weight={500}>
+                    {achieved
+                      ? t('goalProcess.frontier.achievedTitle')
+                      : t('goalProcess.frontier.emptyTitle')}
+                  </Text>
                   <Text fontSize={12} type={'secondary'}>
-                    {t('goalProcess.planning.description')}
+                    {achieved
+                      ? t('goalProcess.frontier.achievedDescription')
+                      : t('goalProcess.frontier.emptyDescription')}
                   </Text>
                 </Flexbox>
-              </Flexbox>
-            ) : (
-              <Flexbox gap={2} padding={12}>
-                <Text weight={500}>
-                  {achieved
-                    ? t('goalProcess.frontier.achievedTitle')
-                    : t('goalProcess.frontier.emptyTitle')}
-                </Text>
-                <Text fontSize={12} type={'secondary'}>
-                  {achieved
-                    ? t('goalProcess.frontier.achievedDescription')
-                    : t('goalProcess.frontier.emptyDescription')}
-                </Text>
-              </Flexbox>
+              ))}
+            {graph.frontier.map((item, index) => (
+              <Fragment key={item.key}>
+                {index > 0 && <Divider dashed style={{ margin: 0 }} />}
+                <FrontierRow
+                  actions={actions}
+                  canEdit={canEdit}
+                  item={item}
+                  numbers={numbers}
+                  subject={
+                    item.view.gateSubjectId ? graph.byId[item.view.gateSubjectId] : undefined
+                  }
+                  onSelect={onSelect}
+                />
+              </Fragment>
             ))}
-          {graph.frontier.map((item, index) => (
-            <Fragment key={item.key}>
-              {index > 0 && <Divider dashed style={{ margin: 0 }} />}
-              <FrontierRow
-                actions={actions}
-                canEdit={canEdit}
-                goalId={graph.goal.id}
-                item={item}
-                numbers={numbers}
-                subject={item.view.gateSubjectId ? graph.byId[item.view.gateSubjectId] : undefined}
-                onSelect={onSelect}
-              />
-            </Fragment>
-          ))}
-        </Block>
-        {graph.blocked.length > 0 && (
-          <>
-            <Divider dashed style={{ margin: 0 }} />
-            <div className={styles.blockedHead} onClick={() => setShowBlocked(!showBlocked)}>
-              <Icon icon={showBlocked ? ChevronDown : ChevronRight} size={12} />
-              <span>{t('goalProcess.frontier.blocked', { count: graph.blocked.length })}</span>
-            </div>
-            {showBlocked && (
-              <Block gap={0} padding={2} variant={'borderless'}>
-                {graph.blocked.map((view, index) => (
-                  <Fragment key={view.node.id}>
-                    {index > 0 && <Divider dashed style={{ margin: 0 }} />}
-                    <FrontierRow
-                      actions={actions}
-                      canEdit={canEdit}
-                      goalId={graph.goal.id}
-                      item={{ key: view.node.id, kind: 'ready', rank: 3, view }}
-                      numbers={numbers}
-                      onSelect={onSelect}
-                    />
-                  </Fragment>
-                ))}
-              </Block>
-            )}
-          </>
-        )}
-      </div>
+          </Block>
+          {graph.blocked.length > 0 && (
+            <>
+              <Divider dashed style={{ margin: 0 }} />
+              <div className={styles.blockedHead} onClick={() => setShowBlocked(!showBlocked)}>
+                <Icon icon={showBlocked ? ChevronDown : ChevronRight} size={12} />
+                <span>{t('goalProcess.frontier.blocked', { count: graph.blocked.length })}</span>
+              </div>
+              {showBlocked && (
+                <Block gap={0} padding={2} variant={'borderless'}>
+                  {graph.blocked.map((view, index) => (
+                    <Fragment key={view.node.id}>
+                      {index > 0 && <Divider dashed style={{ margin: 0 }} />}
+                      <FrontierRow
+                        actions={actions}
+                        canEdit={canEdit}
+                        item={{ key: view.node.id, kind: 'ready', rank: 3, view }}
+                        numbers={numbers}
+                        onSelect={onSelect}
+                      />
+                    </Fragment>
+                  ))}
+                </Block>
+              )}
+            </>
+          )}
+        </div>
+      </GoalFinalAcceptance>
     </Flexbox>
   );
 });

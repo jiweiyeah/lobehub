@@ -1,13 +1,16 @@
 'use client';
 
-import { Flexbox, Icon } from '@lobehub/ui';
+import { Flexbox, Icon, Markdown } from '@lobehub/ui';
 import { Button, Tag, Text } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar } from 'antd-style';
 import { FileText } from 'lucide-react';
-import type { MouseEvent } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useAcceptanceBundle } from '@/features/Acceptance/hooks';
+import { useClientDataSWR } from '@/libs/swr';
+import { portalKeys } from '@/libs/swr/keys';
+import { documentService } from '@/services/document';
 import { useChatStore } from '@/store/chat';
 
 import {
@@ -19,34 +22,35 @@ import {
 import type { GoalNodeView } from './goalGraphViewModel';
 
 /**
- * The Goal's final acceptance once everything ran through: instead of one more
- * finished task row it says the Goal awaits its owner's sign-off, with the final
- * acceptance report right under it as a preview. The full text opens in the
- * side Portal, like every other drill-down on this page, so the reader never
- * leaves the Goal to read what it concluded.
+ * The Goal's final acceptance document, in place of the task list.
  *
- * Both parts render nothing until that point (see `isFinalAcceptanceReady`): a
- * report view on an acceptance that is still running or failing would claim a
+ * Once every task ran through and the final acceptance passed, nothing is left
+ * to advance: what the owner reads next is what the Goal concluded. So the list
+ * gives way to that document — its title and a preview of its content — and the
+ * full text opens in the side Portal, like every other drill-down on this page.
+ *
+ * Until that point (see `isFinalAcceptanceReady`) the list stays exactly as it
+ * was: a document view over work that is still running or failing would claim a
  * finish that has not happened.
  */
 
 const styles = createStaticStyles(({ css }) => ({
-  card: css`
+  document: css`
     cursor: pointer;
 
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 10px;
 
     width: 100%;
-    padding-block: 10px;
-    padding-inline: 12px;
+    padding-block: 16px;
+    padding-inline: 18px;
     border: 1px solid ${cssVar.colorBorderSecondary};
     border-radius: ${cssVar.borderRadius};
 
     text-align: start;
 
-    background: ${cssVar.colorFillQuaternary};
+    background: ${cssVar.colorBgContainer};
 
     &:hover {
       border-color: ${cssVar.colorBorder};
@@ -57,73 +61,32 @@ const styles = createStaticStyles(({ css }) => ({
       outline-offset: -2px;
     }
   `,
-  summary: css`
+  preview: css`
     overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
+    max-height: 320px;
 
-    font-size: 13px;
-    line-height: 1.6;
-    color: ${cssVar.colorTextSecondary};
-    white-space: pre-line;
+    mask-image: linear-gradient(to bottom, #000 75%, transparent);
   `,
 }));
 
-type Acceptance = NonNullable<GoalNodeView['acceptance']>;
+interface GoalFinalAcceptanceProps {
+  /** The task list, shown until the final acceptance has finished and passed. */
+  children: ReactNode;
+  goalId: string;
+  /** The Goal's resolved final acceptance task, when there is one. */
+  view?: GoalNodeView;
+}
 
-// Everything here is its own action; none of it should also open the row's task.
+// The tag and the button are their own actions, not "open the document".
 const stop = (event: MouseEvent) => event.stopPropagation();
 
-const useFinalAcceptance = (acceptance: Acceptance, nodeStatus: string) => {
-  const { data } = useAcceptanceBundle(acceptance.id);
-  const rounds = data?.rounds ?? [];
-  const state = goalAcceptanceState(acceptance.status, latestRunStatus(rounds));
-  return {
-    ready: !!data && isFinalAcceptanceReady(nodeStatus, state),
-    rounds,
-    state,
-  };
-};
-
-export const GoalAcceptanceTag = ({
+const FinalAcceptanceDocument = ({
   acceptance,
-  nodeStatus,
-}: {
-  acceptance: Acceptance;
-  nodeStatus: string;
-}) => {
-  const { t } = useTranslation('chat');
-  const openAcceptance = useChatStore((s) => s.openAcceptance);
-  const { ready, state } = useFinalAcceptance(acceptance, nodeStatus);
-  if (!ready) return null;
-
-  return (
-    <Tag
-      color={state === 'accepted' ? 'success' : 'warning'}
-      size={'small'}
-      style={{ cursor: 'pointer' }}
-      onClick={(event) => {
-        stop(event);
-        openAcceptance(acceptance.id);
-      }}
-    >
-      {t(
-        state === 'accepted'
-          ? 'goalProcess.goalAcceptance.state.accepted'
-          : 'goalProcess.goalAcceptance.state.awaitingAcceptance',
-      )}
-    </Tag>
-  );
-};
-
-export const GoalAcceptanceReportCard = ({
-  acceptance,
+  children,
   goalId,
   view,
-}: {
-  acceptance: Acceptance;
-  goalId: string;
+}: GoalFinalAcceptanceProps & {
+  acceptance: NonNullable<GoalNodeView['acceptance']>;
   view: GoalNodeView;
 }) => {
   const { t } = useTranslation('chat');
@@ -131,23 +94,35 @@ export const GoalAcceptanceReportCard = ({
   const openDocument = useChatStore((s) => s.openDocument);
   const openGoalNode = useChatStore((s) => s.openGoalNode);
   const openVerifyReport = useChatStore((s) => s.openVerifyReport);
-  const { ready, rounds, state } = useFinalAcceptance(acceptance, view.node.status);
-  if (!ready) return null;
 
-  const delivery = pickFinalDelivery({
-    artifacts: view.artifacts,
-    findings: view.findings,
-    rounds,
-  });
-  if (!delivery) {
-    return (
-      <Text fontSize={12} type={'secondary'}>
-        {t('goalProcess.goalAcceptance.reportPending')}
-      </Text>
-    );
-  }
+  const { data } = useAcceptanceBundle(acceptance.id);
+  const rounds = data?.rounds ?? [];
+  const state = goalAcceptanceState(acceptance.status, latestRunStatus(rounds));
+  const ready = !!data && isFinalAcceptanceReady(view.node.status, state);
+  const delivery = ready
+    ? pickFinalDelivery({ artifacts: view.artifacts, findings: view.findings, rounds })
+    : undefined;
+
+  // A registered document carries only its id on the graph; its content is read
+  // with the same key the document Portal uses, so opening it is instant.
+  const documentId = delivery?.kind === 'document' ? delivery.documentId : null;
+  const { data: document } = useClientDataSWR(
+    documentId ? portalKeys.documentHeader(documentId) : null,
+    () => documentService.getDocumentById(documentId!),
+  );
+
+  if (!ready) return <>{children}</>;
+
+  const title =
+    delivery?.kind === 'finding'
+      ? delivery.title
+      : delivery?.kind === 'document'
+        ? document?.title || delivery.title || t('goalProcess.goalAcceptance.reportTitle')
+        : t('goalProcess.goalAcceptance.reportTitle');
+  const content = delivery?.kind === 'document' ? document?.content : delivery?.content;
 
   const open = () => {
+    if (!delivery) return openAcceptance(acceptance.id);
     switch (delivery.kind) {
       case 'report': {
         openVerifyReport(delivery.runId);
@@ -163,12 +138,11 @@ export const GoalAcceptanceReportCard = ({
       }
     }
   };
-  const summary = delivery.kind === 'document' ? delivery.title : delivery.summary;
 
   return (
-    <Flexbox gap={8} onClick={stop}>
+    <Flexbox gap={10}>
       <div
-        className={styles.card}
+        className={styles.document}
         role={'button'}
         tabIndex={0}
         onClick={open}
@@ -179,24 +153,48 @@ export const GoalAcceptanceReportCard = ({
         }}
       >
         <Flexbox horizontal align={'center'} gap={8}>
-          <Icon icon={FileText} size={14} />
-          <Text fontSize={13} weight={500}>
-            {t('goalProcess.goalAcceptance.reportTitle')}
+          <Icon color={cssVar.colorTextSecondary} icon={FileText} size={16} />
+          <Text ellipsis fontSize={15} style={{ flex: 1, minWidth: 0 }} weight={600}>
+            {title}
           </Text>
-          {delivery.kind === 'report' && typeof delivery.totalChecks === 'number' && (
-            <Text fontSize={12} type={'secondary'}>
-              {t('goalProcess.goalAcceptance.checks', {
-                passed: delivery.passedChecks ?? 0,
-                total: delivery.totalChecks,
-              })}
-            </Text>
-          )}
-          <Flexbox flex={1} />
-          <Text fontSize={12} type={'secondary'}>
-            {t('goalProcess.goalAcceptance.viewFull')}
-          </Text>
+          <Tag
+            color={state === 'accepted' ? 'success' : 'warning'}
+            size={'small'}
+            style={{ cursor: 'pointer' }}
+            onClick={(event) => {
+              stop(event);
+              openAcceptance(acceptance.id);
+            }}
+          >
+            {t(
+              state === 'accepted'
+                ? 'goalProcess.goalAcceptance.state.accepted'
+                : 'goalProcess.goalAcceptance.state.awaitingAcceptance',
+            )}
+          </Tag>
         </Flexbox>
-        {summary && <div className={styles.summary}>{summary}</div>}
+        {delivery?.kind === 'report' && typeof delivery.totalChecks === 'number' && (
+          <Text fontSize={12} type={'secondary'}>
+            {t('goalProcess.goalAcceptance.checks', {
+              passed: delivery.passedChecks ?? 0,
+              total: delivery.totalChecks,
+            })}
+          </Text>
+        )}
+        {content ? (
+          <div className={styles.preview}>
+            <Markdown fontSize={13} variant={'chat'}>
+              {content}
+            </Markdown>
+          </div>
+        ) : (
+          <Text fontSize={12} type={'secondary'}>
+            {t('goalProcess.goalAcceptance.reportPending')}
+          </Text>
+        )}
+        <Text fontSize={12} type={'secondary'}>
+          {t('goalProcess.goalAcceptance.viewFull')}
+        </Text>
       </div>
       {state === 'awaitingAcceptance' && (
         <Flexbox horizontal>
@@ -206,5 +204,14 @@ export const GoalAcceptanceReportCard = ({
         </Flexbox>
       )}
     </Flexbox>
+  );
+};
+
+export const GoalFinalAcceptance = ({ children, goalId, view }: GoalFinalAcceptanceProps) => {
+  if (!view?.acceptance) return <>{children}</>;
+  return (
+    <FinalAcceptanceDocument acceptance={view.acceptance} goalId={goalId} view={view}>
+      {children}
+    </FinalAcceptanceDocument>
   );
 };
