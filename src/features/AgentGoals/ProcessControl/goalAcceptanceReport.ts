@@ -48,6 +48,92 @@ export const isFinalAcceptanceReady = (
   state: GoalAcceptanceState | undefined,
 ): boolean => nodeStatus === 'resolved' && (state === 'awaitingAcceptance' || state === 'accepted');
 
+interface ReportLike {
+  passedChecks: number | null;
+  summary: string | null;
+  totalChecks: number | null;
+}
+
+interface DocumentArtifactLike {
+  agentDocumentId?: string;
+  createdAt: Date;
+  resourceId: string | null;
+  title: string | null;
+  type: string;
+}
+
+interface FindingLike {
+  createdAt: Date;
+  description: string | null;
+  id: string;
+  resolvedAt?: Date | null;
+  title: string;
+}
+
+export type FinalDelivery =
+  | {
+      kind: 'report';
+      passedChecks: number | null;
+      runId: string;
+      summary: string | null;
+      totalChecks: number | null;
+    }
+  | { agentDocumentId?: string; documentId: string; kind: 'document'; title: string | null }
+  | { kind: 'finding'; nodeId: string; summary: string | null; title: string };
+
+/**
+ * What the final acceptance delivered, in the order a reader trusts it: the
+ * acceptance report when a round produced one, else the document the acceptance
+ * Task registered, else its own final delivery (the newest finding it produced).
+ *
+ * The report is not guaranteed: it is written only when the settle path carries
+ * the deliverable, and a round judged by the verifier agent often has none. The
+ * acceptance Task's own delivery is still the Goal's final report in substance —
+ * its contract is to return one auditable final delivery — so it stands in
+ * rather than leaving the owner with an empty placeholder.
+ */
+export const pickFinalDelivery = <Report extends ReportLike>(params: {
+  artifacts: DocumentArtifactLike[];
+  findings: FindingLike[];
+  rounds: RoundLike<Report>[];
+}): FinalDelivery | undefined => {
+  const latest = latestAcceptanceReport(params.rounds);
+  if (latest) {
+    return {
+      kind: 'report',
+      passedChecks: latest.report.passedChecks,
+      runId: latest.runId,
+      summary: latest.report.summary,
+      totalChecks: latest.report.totalChecks,
+    };
+  }
+
+  const document = params.artifacts
+    .filter((artifact) => artifact.type === 'document' && artifact.resourceId)
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+  if (document?.resourceId) {
+    return {
+      agentDocumentId: document.agentDocumentId,
+      documentId: document.resourceId,
+      kind: 'document',
+      title: document.title,
+    };
+  }
+
+  const finding = [...params.findings].sort(
+    (a, b) => (b.resolvedAt ?? b.createdAt).getTime() - (a.resolvedAt ?? a.createdAt).getTime(),
+  )[0];
+  if (finding) {
+    return {
+      kind: 'finding',
+      nodeId: finding.id,
+      summary: finding.description,
+      title: finding.title,
+    };
+  }
+  return undefined;
+};
+
 interface RoundLike<Report> {
   report: Report | null;
   run: { id: string; status: string | null };

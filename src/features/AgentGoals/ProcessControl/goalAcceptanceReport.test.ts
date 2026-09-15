@@ -5,9 +5,10 @@ import {
   isFinalAcceptanceReady,
   latestAcceptanceReport,
   latestRunStatus,
+  pickFinalDelivery,
 } from './goalAcceptanceReport';
 
-const round = (id: string, status: string, report: { summary: string } | null = null) => ({
+const round = <Report>(id: string, status: string, report: Report | null = null) => ({
   report,
   run: { id, status },
 });
@@ -48,6 +49,69 @@ describe('isFinalAcceptanceReady', () => {
     expect(isFinalAcceptanceReady('resolved', 'awaitingDecision')).toBe(false);
     expect(isFinalAcceptanceReady('resolved', 'inProgress')).toBe(false);
     expect(isFinalAcceptanceReady('resolved', undefined)).toBe(false);
+  });
+});
+
+describe('pickFinalDelivery', () => {
+  const report = { passedChecks: 3, summary: 'All three checks passed.', totalChecks: 3 };
+  const finding = (id: string, minute: number) => ({
+    createdAt: new Date(2026, 8, 15, 22, minute),
+    description: `结论：delivery ${id}`,
+    id,
+    title: `已交付 ${id}`,
+  });
+  const doc = (id: string, minute: number) => ({
+    createdAt: new Date(2026, 8, 15, 22, minute),
+    resourceId: id,
+    title: `Report ${id}`,
+    type: 'document',
+  });
+
+  it('prefers the acceptance report when a round produced one', () => {
+    expect(
+      pickFinalDelivery({
+        artifacts: [doc('docs_1', 1)],
+        findings: [finding('f1', 1)],
+        rounds: [round('r1', 'passed', report)],
+      }),
+    ).toEqual({
+      kind: 'report',
+      passedChecks: 3,
+      runId: 'r1',
+      summary: report.summary,
+      totalChecks: 3,
+    });
+  });
+
+  /**
+   * Regression: a final acceptance judged by the verifier agent passed with no
+   * report row, so the finished Goal showed only "the report shows up here".
+   */
+  it('falls back to the acceptance task delivery when no round wrote a report', () => {
+    expect(
+      pickFinalDelivery({
+        artifacts: [doc('docs_old', 1), doc('docs_new', 5)],
+        findings: [finding('f1', 1)],
+        rounds: [round('r1', 'passed')],
+      }),
+    ).toEqual({ documentId: 'docs_new', kind: 'document', title: 'Report docs_new' });
+
+    expect(
+      pickFinalDelivery({
+        artifacts: [],
+        findings: [finding('f_old', 1), finding('f_new', 9)],
+        rounds: [round('r1', 'passed')],
+      }),
+    ).toEqual({
+      kind: 'finding',
+      nodeId: 'f_new',
+      summary: '结论：delivery f_new',
+      title: '已交付 f_new',
+    });
+  });
+
+  it('returns nothing when the acceptance has produced nothing yet', () => {
+    expect(pickFinalDelivery({ artifacts: [], findings: [], rounds: [] })).toBeUndefined();
   });
 });
 

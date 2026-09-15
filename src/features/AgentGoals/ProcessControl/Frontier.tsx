@@ -336,12 +336,13 @@ AcceptanceChip.displayName = 'GoalAcceptanceChip';
 const FrontierRow = memo<{
   actions: FrontierActions;
   canEdit: boolean;
+  goalId: string;
   item: FrontierItem;
   numbers: Map<string, number>;
   onSelect: (nodeId: string) => void;
   /** A gate's ledger is the ledger of the Task it was opened for. */
   subject?: GoalNodeView;
-}>(({ actions, canEdit, item, numbers, onSelect, subject }) => {
+}>(({ actions, canEdit, goalId, item, numbers, onSelect, subject }) => {
   const { t } = useTranslation('chat');
   const optionLabel = useOptionLabel();
   const [note, setNote] = useState('');
@@ -432,7 +433,7 @@ const FrontierRow = memo<{
 
       {finalAcceptance && (
         <Flexbox className={styles.body} gap={8}>
-          <GoalAcceptanceReportCard acceptance={finalAcceptance} nodeStatus={node.status} />
+          <GoalAcceptanceReportCard acceptance={finalAcceptance} goalId={goalId} view={view} />
         </Flexbox>
       )}
 
@@ -574,6 +575,7 @@ const Frontier = memo<FrontierProps>(({ actions, canEdit, graph, onSelect, plann
               <FrontierRow
                 actions={actions}
                 canEdit={canEdit}
+                goalId={graph.goal.id}
                 item={item}
                 numbers={numbers}
                 subject={item.view.gateSubjectId ? graph.byId[item.view.gateSubjectId] : undefined}
@@ -597,6 +599,7 @@ const Frontier = memo<FrontierProps>(({ actions, canEdit, graph, onSelect, plann
                     <FrontierRow
                       actions={actions}
                       canEdit={canEdit}
+                      goalId={graph.goal.id}
                       item={{ key: view.node.id, kind: 'ready', rank: 3, view }}
                       numbers={numbers}
                       onSelect={onSelect}

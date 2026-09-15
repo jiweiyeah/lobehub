@@ -13,8 +13,8 @@ import { useChatStore } from '@/store/chat';
 import {
   goalAcceptanceState,
   isFinalAcceptanceReady,
-  latestAcceptanceReport,
   latestRunStatus,
+  pickFinalDelivery,
 } from './goalAcceptanceReport';
 import type { GoalNodeView } from './goalGraphViewModel';
 
@@ -66,18 +66,16 @@ const styles = createStaticStyles(({ css }) => ({
     font-size: 13px;
     line-height: 1.6;
     color: ${cssVar.colorTextSecondary};
+    white-space: pre-line;
   `,
 }));
 
-interface FinalAcceptanceProps {
-  acceptance: NonNullable<GoalNodeView['acceptance']>;
-  nodeStatus: string;
-}
+type Acceptance = NonNullable<GoalNodeView['acceptance']>;
 
 // Everything here is its own action; none of it should also open the row's task.
 const stop = (event: MouseEvent) => event.stopPropagation();
 
-const useFinalAcceptance = ({ acceptance, nodeStatus }: FinalAcceptanceProps) => {
+const useFinalAcceptance = (acceptance: Acceptance, nodeStatus: string) => {
   const { data } = useAcceptanceBundle(acceptance.id);
   const rounds = data?.rounds ?? [];
   const state = goalAcceptanceState(acceptance.status, latestRunStatus(rounds));
@@ -88,10 +86,16 @@ const useFinalAcceptance = ({ acceptance, nodeStatus }: FinalAcceptanceProps) =>
   };
 };
 
-export const GoalAcceptanceTag = (props: FinalAcceptanceProps) => {
+export const GoalAcceptanceTag = ({
+  acceptance,
+  nodeStatus,
+}: {
+  acceptance: Acceptance;
+  nodeStatus: string;
+}) => {
   const { t } = useTranslation('chat');
   const openAcceptance = useChatStore((s) => s.openAcceptance);
-  const { ready, state } = useFinalAcceptance(props);
+  const { ready, state } = useFinalAcceptance(acceptance, nodeStatus);
   if (!ready) return null;
 
   return (
@@ -101,7 +105,7 @@ export const GoalAcceptanceTag = (props: FinalAcceptanceProps) => {
       style={{ cursor: 'pointer' }}
       onClick={(event) => {
         stop(event);
-        openAcceptance(props.acceptance.id);
+        openAcceptance(acceptance.id);
       }}
     >
       {t(
@@ -113,15 +117,29 @@ export const GoalAcceptanceTag = (props: FinalAcceptanceProps) => {
   );
 };
 
-export const GoalAcceptanceReportCard = (props: FinalAcceptanceProps) => {
+export const GoalAcceptanceReportCard = ({
+  acceptance,
+  goalId,
+  view,
+}: {
+  acceptance: Acceptance;
+  goalId: string;
+  view: GoalNodeView;
+}) => {
   const { t } = useTranslation('chat');
   const openAcceptance = useChatStore((s) => s.openAcceptance);
+  const openDocument = useChatStore((s) => s.openDocument);
+  const openGoalNode = useChatStore((s) => s.openGoalNode);
   const openVerifyReport = useChatStore((s) => s.openVerifyReport);
-  const { ready, rounds, state } = useFinalAcceptance(props);
+  const { ready, rounds, state } = useFinalAcceptance(acceptance, view.node.status);
   if (!ready) return null;
 
-  const latest = latestAcceptanceReport(rounds);
-  if (!latest) {
+  const delivery = pickFinalDelivery({
+    artifacts: view.artifacts,
+    findings: view.findings,
+    rounds,
+  });
+  if (!delivery) {
     return (
       <Text fontSize={12} type={'secondary'}>
         {t('goalProcess.goalAcceptance.reportPending')}
@@ -129,8 +147,23 @@ export const GoalAcceptanceReportCard = (props: FinalAcceptanceProps) => {
     );
   }
 
-  const { report, runId } = latest;
-  const openReport = () => openVerifyReport(runId);
+  const open = () => {
+    switch (delivery.kind) {
+      case 'report': {
+        openVerifyReport(delivery.runId);
+        break;
+      }
+      case 'document': {
+        openDocument(delivery.documentId, delivery.agentDocumentId);
+        break;
+      }
+      case 'finding': {
+        openGoalNode(goalId, delivery.nodeId);
+        break;
+      }
+    }
+  };
+  const summary = delivery.kind === 'document' ? delivery.title : delivery.summary;
 
   return (
     <Flexbox gap={8} onClick={stop}>
@@ -138,11 +171,11 @@ export const GoalAcceptanceReportCard = (props: FinalAcceptanceProps) => {
         className={styles.card}
         role={'button'}
         tabIndex={0}
-        onClick={openReport}
+        onClick={open}
         onKeyDown={(event) => {
           if (event.key !== 'Enter' && event.key !== ' ') return;
           event.preventDefault();
-          openReport();
+          open();
         }}
       >
         <Flexbox horizontal align={'center'} gap={8}>
@@ -150,11 +183,11 @@ export const GoalAcceptanceReportCard = (props: FinalAcceptanceProps) => {
           <Text fontSize={13} weight={500}>
             {t('goalProcess.goalAcceptance.reportTitle')}
           </Text>
-          {typeof report.totalChecks === 'number' && (
+          {delivery.kind === 'report' && typeof delivery.totalChecks === 'number' && (
             <Text fontSize={12} type={'secondary'}>
               {t('goalProcess.goalAcceptance.checks', {
-                passed: report.passedChecks ?? 0,
-                total: report.totalChecks,
+                passed: delivery.passedChecks ?? 0,
+                total: delivery.totalChecks,
               })}
             </Text>
           )}
@@ -163,15 +196,11 @@ export const GoalAcceptanceReportCard = (props: FinalAcceptanceProps) => {
             {t('goalProcess.goalAcceptance.viewFull')}
           </Text>
         </Flexbox>
-        {report.summary && <div className={styles.summary}>{report.summary}</div>}
+        {summary && <div className={styles.summary}>{summary}</div>}
       </div>
       {state === 'awaitingAcceptance' && (
         <Flexbox horizontal>
-          <Button
-            size={'small'}
-            type={'primary'}
-            onClick={() => openAcceptance(props.acceptance.id)}
-          >
+          <Button size={'small'} type={'primary'} onClick={() => openAcceptance(acceptance.id)}>
             {t('goalProcess.goalAcceptance.review')}
           </Button>
         </Flexbox>
