@@ -14,6 +14,12 @@ const routeParamsMock = vi.hoisted(() => ({ aid: 'agent-1' as string | undefined
 const agentStoreStateMock = vi.hoisted(() => ({ activeAgentId: 'agent-1' as string | undefined }));
 const activeWorkspaceSlugMock = vi.hoisted(() => ({ value: 'lobehub' as string | null }));
 
+vi.mock('@/features/Projects/WorkingDirectories/AgentDirectoryActions', () => ({
+  AgentDirectoryActions: ({ onLegacyStart }: { onLegacyStart: () => Promise<void> }) => (
+    <button aria-label="actions.addNewTopicInProject:project" onClick={onLegacyStart} />
+  ),
+}));
+
 vi.mock('react-router', () => ({
   useParams: () => routeParamsMock,
 }));

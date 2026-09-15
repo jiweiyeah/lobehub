@@ -1,0 +1,26 @@
+import { Flexbox } from '@lobehub/ui';
+
+import AsyncError from '@/components/AsyncError';
+import { RouteLoading } from '@/components/Skeleton/RouteSegment';
+import { useActiveRouteParams } from '@/hooks/useActiveRouteParams';
+import { useProjectStore } from '@/store/project';
+
+import { ProjectWorkingDirectories } from './index';
+
+export function ProjectDirectoriesPage() {
+  const { projectId } = useActiveRouteParams<{ projectId: string }>();
+  const { data, error, isLoading, mutate } = useProjectStore((s) => s.useFetchProjectDetail)(
+    projectId,
+  );
+  if (isLoading && !data) return <RouteLoading />;
+  if (error && !data) return <AsyncError error={error} variant="page" onRetry={mutate} />;
+  if (!data) return null;
+  return (
+    <Flexbox flex={1} paddingInline={32} style={{ overflow: 'auto' }}>
+      <ProjectWorkingDirectories
+        coordinatorAgentId={data.data.project.coordinatorAgentId}
+        projectId={data.data.project.id}
+      />
+    </Flexbox>
+  );
+}

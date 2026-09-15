@@ -1,7 +1,7 @@
 'use client';
 
 import { Flexbox } from '@lobehub/ui';
-import { ClipboardCheckIcon, ListTodoIcon, TargetIcon } from 'lucide-react';
+import { ClipboardCheckIcon, FolderClosedIcon, ListTodoIcon, TargetIcon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router';
@@ -48,6 +48,12 @@ const ProjectSidebarContent = memo(() => {
             icon={ListTodoIcon}
             title={t('sections.tasks')}
             onClick={() => navigate(projectTasksPath)}
+          />
+          <NavItem
+            active={pathname.endsWith(`/project/${projectId}/working-directories`)}
+            icon={FolderClosedIcon}
+            title={t('directories.title')}
+            onClick={() => navigate(`/project/${projectId}/working-directories`)}
           />
           <NavItem
             active={pathname === projectGoalsPath}

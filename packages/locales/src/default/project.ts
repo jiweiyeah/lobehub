@@ -1,4 +1,38 @@
 export default {
+  'directories.coordinator': 'Project coordinator',
+  'directories.environment': 'Environment',
+  'directories.newEnvironment': 'Create an environment or reuse this directory\u2019s binding',
+
+  'directories.boundRoot':
+    'This conversation is bound to a project directory. Start a new conversation to use a different directory.',
+  'directories.detectRepository': 'Detect GitHub repository',
+  'directories.unavailable':
+    'Device is offline or the directory is unavailable. Reconnect and retry.',
+
+  'directories.title': 'Working directories',
+  'directories.add': 'Add working directory',
+  'directories.bind': 'Link to project',
+  'directories.bindDescription':
+    'Link an existing directory on a device to a project. Files stay on the device.',
+  'directories.project': 'Select project',
+  'directories.device': 'Select device',
+  'directories.path': 'Absolute directory path',
+  'directories.name': 'Directory name',
+  'directories.repository': 'GitHub repository URL (optional)',
+  'directories.repositoryHint':
+    'This records the source repository. It does not clone or synchronize files. Do not include credentials.',
+  'directories.fileTopics': 'Also file these {{count}} conversations under this project and device',
+  'directories.createProject': 'Create a project',
+  'directories.empty': 'Link a device directory to start working with an Agent in this project.',
+  'directories.start': 'Start work here',
+  'directories.chooseAgent': 'Choose Agent',
+  'directories.conversations': 'Conversations',
+  'directories.noConversations': 'No conversations in this directory yet.',
+  'directories.untitled': 'Untitled conversation',
+  'directories.openProject': 'Open project: {{name}}',
+  'directories.startInProject': 'Start work in {{name}}',
+  'directories.projectBinding': 'Project links',
+
   'acceptance.actions.accept': 'Accept completion',
   'acceptance.actions.reject': 'Request changes',
   'acceptance.actions.reopen': 'Reopen project',
