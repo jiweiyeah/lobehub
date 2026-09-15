@@ -193,7 +193,7 @@ export interface SystemInfoResponseMessage {
   requestId: string;
   result: {
     success: boolean;
-    systemInfo: DeviceSystemInfo;
+    systemInfo?: DeviceSystemInfo;
   };
   type: 'system_info_response';
 }
