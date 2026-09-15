@@ -53,6 +53,30 @@ describe('GatewayConnectionService system_info_request', () => {
     });
   });
 
+  it('omits an optional folder Electron cannot resolve and still answers successfully', async () => {
+    getShellInfoMock.mockResolvedValue({ displayName: 'pwsh' });
+    const { app } = await import('electron');
+    const getPath = vi.mocked(app.getPath);
+    const original = getPath.getMockImplementation();
+    getPath.mockImplementation((name: string) => {
+      if (name === 'pictures') throw new Error("Failed to get 'pictures' path");
+      return `/mock/path/${name}`;
+    });
+    const client = createClient();
+
+    try {
+      await (service as any).handleSystemInfoRequest(client, { requestId: 'req-3' });
+    } finally {
+      getPath.mockImplementation(original!);
+    }
+
+    const [response] = client.sendSystemInfoResponse.mock.calls[0];
+    expect(response.requestId).toBe('req-3');
+    expect(response.result.success).toBe(true);
+    expect(response.result.systemInfo.picturesPath).toBeUndefined();
+    expect(response.result.systemInfo.homePath).toBe('/mock/path/home');
+  });
+
   it('still answers with a failure when collecting system info rejects', async () => {
     getShellInfoMock.mockRejectedValue(new Error('shell probe failed'));
     const client = createClient();
