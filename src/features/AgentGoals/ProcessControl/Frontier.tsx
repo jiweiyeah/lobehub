@@ -20,8 +20,10 @@ import {
   coordinatorGateReason,
   coordinatorNodeTitleKey,
   coordinatorReasonCopy,
+  isGoalAcceptanceTask,
   viewGateKind,
 } from './coordinatorCopy';
+import { GoalAcceptanceReportCard, GoalAcceptanceTag } from './GoalAcceptanceCard';
 import type { FrontierItem, GoalGraphView, GoalNodeView } from './goalGraphViewModel';
 import { useElapsed } from './useElapsed';
 
@@ -346,6 +348,15 @@ const FrontierRow = memo<{
   const { view } = item;
   const { node } = view;
   const deps = view.dependsOn.map((id) => numbers.get(id)).filter(Boolean);
+  // The Goal's own acceptance is what its owner waits on: it names that state
+  // itself and carries the final report, instead of the generic acceptance chip.
+  const goalAcceptance = isGoalAcceptanceTask(view) ? view.acceptance : undefined;
+  // A gate opened on that acceptance is the same decision, so the report the
+  // owner decides on sits under the gate's question as well.
+  const gateAcceptance =
+    item.kind === 'gate' && subject && isGoalAcceptanceTask(subject)
+      ? subject.acceptance
+      : undefined;
 
   // Coordinator-authored gates carry English strings; recognized shapes render
   // in the user's language, arbitrary gates keep their stored copy.
@@ -365,7 +376,7 @@ const FrontierRow = memo<{
     item.kind === 'verifying' && !!view.acceptance && !!ACCEPTANCE_CHIP[view.acceptance.status];
   const tag =
     item.kind === 'verifying'
-      ? verifyingChipShown
+      ? verifyingChipShown || goalAcceptance
         ? null
         : { color: 'info', text: t('goalProcess.tag.verifying') }
       : item.kind === 'stale'
@@ -409,11 +420,21 @@ const FrontierRow = memo<{
         )}
         <Flexbox flex={1} />
         <Flexbox horizontal align={'center'} gap={8} style={{ flex: 'none' }}>
-          <AcceptanceChip view={view} />
+          {goalAcceptance ? (
+            <GoalAcceptanceTag acceptance={goalAcceptance} />
+          ) : (
+            <AcceptanceChip view={view} />
+          )}
           {item.kind === 'running' && <RunningClock startedAt={view.startedAt} />}
           {item.kind === 'done' && <DoneTime view={view} />}
         </Flexbox>
       </Flexbox>
+
+      {goalAcceptance && (
+        <Flexbox className={styles.body} gap={8}>
+          <GoalAcceptanceReportCard acceptance={goalAcceptance} />
+        </Flexbox>
+      )}
 
       {item.rank === 0 && (
         // The expanded body is READ-ONLY content — why it stopped and what each
@@ -432,6 +453,7 @@ const FrontierRow = memo<{
               {gateReasonText ?? view.decision.question}
             </Text>
           )}
+          {gateAcceptance && <GoalAcceptanceReportCard acceptance={gateAcceptance} />}
           {item.kind === 'stale' && <StaleBody view={view} />}
           <AttemptLedger view={subject ?? view} />
           {item.kind === 'gate' && canEdit && (
