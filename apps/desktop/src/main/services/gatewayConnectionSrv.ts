@@ -25,6 +25,7 @@ import { isDev } from '@/const/env';
 import { getDesktopEnv } from '@/env';
 import { createLogger } from '@/utils/logger';
 import { getDesktopUserAgent } from '@/utils/user-agent';
+import { safeGetPath } from '@/utils/user-path';
 
 import { ServiceModule } from './index';
 
@@ -444,7 +445,9 @@ export default class GatewayConnectionService extends ServiceModule {
     });
 
     client.on('system_info_request', (request) => {
-      this.handleSystemInfoRequest(client, request);
+      this.handleSystemInfoRequest(client, request).catch((error) => {
+        logger.error(`system_info_request failed: requestId=${request.requestId}`, error);
+      });
     });
 
     client.on('rpc_request', (request) => {
@@ -709,12 +712,12 @@ export default class GatewayConnectionService extends ServiceModule {
           defaultShell: (await getShellInfo()).displayName,
           desktopPath: app.getPath('desktop'),
           documentsPath: app.getPath('documents'),
-          downloadsPath: app.getPath('downloads'),
+          downloadsPath: safeGetPath('downloads'),
           homePath: app.getPath('home'),
-          musicPath: app.getPath('music'),
-          picturesPath: app.getPath('pictures'),
+          musicPath: safeGetPath('music'),
+          picturesPath: safeGetPath('pictures'),
           userDataPath: app.getPath('userData'),
-          videosPath: app.getPath('videos'),
+          videosPath: safeGetPath('videos'),
           workingDirectory: process.cwd(),
         },
       },
