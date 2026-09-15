@@ -528,7 +528,7 @@ const Frontier = memo<FrontierProps>(({ actions, canEdit, graph, onSelect, plann
         {canEdit && <AddTaskButton onAdd={actions.addTask} />}
       </Flexbox>
 
-      <GoalFinalAcceptance goalId={graph.goal.id} view={finalAcceptanceView}>
+      <GoalFinalAcceptance view={finalAcceptanceView}>
         <div className={styles.list}>
           <Block gap={0} padding={2} variant={'borderless'}>
             {graph.frontier.length === 0 &&

@@ -8,30 +8,29 @@ import type { MouseEvent, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useAcceptanceBundle } from '@/features/Acceptance/hooks';
-import { useClientDataSWR } from '@/libs/swr';
-import { portalKeys } from '@/libs/swr/keys';
-import { documentService } from '@/services/document';
 import { useChatStore } from '@/store/chat';
 
 import {
   goalAcceptanceState,
   isFinalAcceptanceReady,
   latestRunStatus,
-  pickFinalDelivery,
+  pickAcceptanceReport,
 } from './goalAcceptanceReport';
 import type { GoalNodeView } from './goalGraphViewModel';
 
 /**
- * The Goal's final acceptance document, in place of the task list.
+ * The Goal's final acceptance report, in place of the task list.
  *
  * Once every task ran through and the final acceptance passed, nothing is left
- * to advance: what the owner reads next is what the Goal concluded. So the list
- * gives way to that document — its title and a preview of its content — and the
- * full text opens in the side Portal, like every other drill-down on this page.
+ * to advance: what the owner reads next is the acceptance's judgment. So the
+ * list gives way to that report — its title and a preview of its content — and
+ * the full report opens in the side Portal, like every other drill-down here.
+ * It is the report of the acceptance, not the acceptance Task's delivery: the
+ * delivery is what was accepted, the report is what the owner signs off on.
  *
  * Until that point (see `isFinalAcceptanceReady`) the list stays exactly as it
- * was: a document view over work that is still running or failing would claim a
- * finish that has not happened.
+ * was: a report over work that is still running or failing would claim a finish
+ * that has not happened.
  */
 
 const styles = createStaticStyles(({ css }) => ({
@@ -72,18 +71,16 @@ const styles = createStaticStyles(({ css }) => ({
 interface GoalFinalAcceptanceProps {
   /** The task list, shown until the final acceptance has finished and passed. */
   children: ReactNode;
-  goalId: string;
   /** The Goal's resolved final acceptance task, when there is one. */
   view?: GoalNodeView;
 }
 
-// The tag and the button are their own actions, not "open the document".
+// The tag and the button are their own actions, not "open the report".
 const stop = (event: MouseEvent) => event.stopPropagation();
 
-const FinalAcceptanceDocument = ({
+const FinalAcceptanceReport = ({
   acceptance,
   children,
-  goalId,
   view,
 }: GoalFinalAcceptanceProps & {
   acceptance: NonNullable<GoalNodeView['acceptance']>;
@@ -91,53 +88,15 @@ const FinalAcceptanceDocument = ({
 }) => {
   const { t } = useTranslation('chat');
   const openAcceptance = useChatStore((s) => s.openAcceptance);
-  const openDocument = useChatStore((s) => s.openDocument);
-  const openGoalNode = useChatStore((s) => s.openGoalNode);
   const openVerifyReport = useChatStore((s) => s.openVerifyReport);
 
   const { data } = useAcceptanceBundle(acceptance.id);
   const rounds = data?.rounds ?? [];
   const state = goalAcceptanceState(acceptance.status, latestRunStatus(rounds));
-  const ready = !!data && isFinalAcceptanceReady(view.node.status, state);
-  const delivery = ready
-    ? pickFinalDelivery({ artifacts: view.artifacts, findings: view.findings, rounds })
-    : undefined;
+  if (!data || !isFinalAcceptanceReady(view.node.status, state)) return <>{children}</>;
 
-  // A registered document carries only its id on the graph; its content is read
-  // with the same key the document Portal uses, so opening it is instant.
-  const documentId = delivery?.kind === 'document' ? delivery.documentId : null;
-  const { data: document } = useClientDataSWR(
-    documentId ? portalKeys.documentHeader(documentId) : null,
-    () => documentService.getDocumentById(documentId!),
-  );
-
-  if (!ready) return <>{children}</>;
-
-  const title =
-    delivery?.kind === 'finding'
-      ? delivery.title
-      : delivery?.kind === 'document'
-        ? document?.title || delivery.title || t('goalProcess.goalAcceptance.reportTitle')
-        : t('goalProcess.goalAcceptance.reportTitle');
-  const content = delivery?.kind === 'document' ? document?.content : delivery?.content;
-
-  const open = () => {
-    if (!delivery) return openAcceptance(acceptance.id);
-    switch (delivery.kind) {
-      case 'report': {
-        openVerifyReport(delivery.runId);
-        break;
-      }
-      case 'document': {
-        openDocument(delivery.documentId, delivery.agentDocumentId);
-        break;
-      }
-      case 'finding': {
-        openGoalNode(goalId, delivery.nodeId);
-        break;
-      }
-    }
-  };
+  const report = pickAcceptanceReport({ checks: data.checks, rounds });
+  const open = () => (report ? openVerifyReport(report.runId) : openAcceptance(acceptance.id));
 
   return (
     <Flexbox gap={10}>
@@ -155,7 +114,7 @@ const FinalAcceptanceDocument = ({
         <Flexbox horizontal align={'center'} gap={8}>
           <Icon color={cssVar.colorTextSecondary} icon={FileText} size={16} />
           <Text ellipsis fontSize={15} style={{ flex: 1, minWidth: 0 }} weight={600}>
-            {title}
+            {t('goalProcess.goalAcceptance.reportTitle')}
           </Text>
           <Tag
             color={state === 'accepted' ? 'success' : 'warning'}
@@ -173,18 +132,18 @@ const FinalAcceptanceDocument = ({
             )}
           </Tag>
         </Flexbox>
-        {delivery?.kind === 'report' && typeof delivery.totalChecks === 'number' && (
+        {typeof report?.totalChecks === 'number' && (
           <Text fontSize={12} type={'secondary'}>
             {t('goalProcess.goalAcceptance.checks', {
-              passed: delivery.passedChecks ?? 0,
-              total: delivery.totalChecks,
+              passed: report.passedChecks ?? 0,
+              total: report.totalChecks,
             })}
           </Text>
         )}
-        {content ? (
+        {report?.content ? (
           <div className={styles.preview}>
             <Markdown fontSize={13} variant={'chat'}>
-              {content}
+              {report.content}
             </Markdown>
           </div>
         ) : (
@@ -207,11 +166,11 @@ const FinalAcceptanceDocument = ({
   );
 };
 
-export const GoalFinalAcceptance = ({ children, goalId, view }: GoalFinalAcceptanceProps) => {
+export const GoalFinalAcceptance = ({ children, view }: GoalFinalAcceptanceProps) => {
   if (!view?.acceptance) return <>{children}</>;
   return (
-    <FinalAcceptanceDocument acceptance={view.acceptance} goalId={goalId} view={view}>
+    <FinalAcceptanceReport acceptance={view.acceptance} view={view}>
       {children}
-    </FinalAcceptanceDocument>
+    </FinalAcceptanceReport>
   );
 };

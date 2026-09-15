@@ -5,7 +5,7 @@ import {
   isFinalAcceptanceReady,
   latestAcceptanceReport,
   latestRunStatus,
-  pickFinalDelivery,
+  pickAcceptanceReport,
 } from './goalAcceptanceReport';
 
 const round = <Report>(id: string, status: string, report: Report | null = null) => ({
@@ -52,81 +52,80 @@ describe('isFinalAcceptanceReady', () => {
   });
 });
 
-describe('pickFinalDelivery', () => {
+describe('pickAcceptanceReport', () => {
   const report = {
     content: '# Final acceptance\n\nAll three checks passed.',
     passedChecks: 3,
     summary: 'All three checks passed.',
     totalChecks: 3,
   };
-  const finding = (id: string, minute: number) => ({
-    createdAt: new Date(2026, 8, 15, 22, minute),
-    description: `结论：delivery ${id}`,
-    id,
-    title: `已交付 ${id}`,
-  });
-  const doc = (id: string, minute: number) => ({
-    createdAt: new Date(2026, 8, 15, 22, minute),
-    resourceId: id,
-    title: `Report ${id}`,
-    type: 'document',
+  const check = (title: string, verdict: string, reasoning?: string) => ({
+    required: true,
+    result: { status: verdict, toulmin: { reasoning }, verdict },
+    title,
   });
 
-  it('prefers the acceptance report when a round produced one', () => {
+  it('uses the report a round wrote', () => {
     expect(
-      pickFinalDelivery({
-        artifacts: [doc('docs_1', 1)],
-        findings: [finding('f1', 1)],
-        rounds: [round('r1', 'passed', report)],
+      pickAcceptanceReport({
+        checks: [check('Answer is correct', 'passed')],
+        rounds: [round('r1', 'failed'), round('r2', 'passed', report)],
       }),
-    ).toEqual({
-      content: report.content,
-      kind: 'report',
-      passedChecks: 3,
-      runId: 'r1',
-      totalChecks: 3,
-    });
-  });
+    ).toEqual({ content: report.content, passedChecks: 3, runId: 'r2', totalChecks: 3 });
 
-  it('previews the report summary when the round has no full report text', () => {
     expect(
-      pickFinalDelivery({
-        artifacts: [],
-        findings: [],
+      pickAcceptanceReport({
+        checks: [],
         rounds: [round('r1', 'passed', { ...report, content: null })],
       }),
-    ).toMatchObject({ content: report.summary, kind: 'report' });
+    ).toMatchObject({ content: report.summary });
   });
 
   /**
-   * Regression: a final acceptance judged by the verifier agent passed with no
-   * report row, so the finished Goal showed only "the report shows up here".
+   * Regression: with no written report the preview showed the acceptance Task's
+   * own delivery ("已交付：1+1等于2"), which is the product being accepted, not
+   * the acceptance report the owner signs off on.
    */
-  it('falls back to the acceptance task delivery when no round wrote a report', () => {
-    expect(
-      pickFinalDelivery({
-        artifacts: [doc('docs_old', 1), doc('docs_new', 5)],
-        findings: [finding('f1', 1)],
-        rounds: [round('r1', 'passed')],
-      }),
-    ).toEqual({ documentId: 'docs_new', kind: 'document', title: 'Report docs_new' });
-
-    expect(
-      pickFinalDelivery({
-        artifacts: [],
-        findings: [finding('f_old', 1), finding('f_new', 9)],
-        rounds: [round('r1', 'passed')],
-      }),
-    ).toEqual({
-      content: '结论：delivery f_new',
-      kind: 'finding',
-      nodeId: 'f_new',
-      title: '已交付 f_new',
+  it('reads the judgment off the latest round checks when no report was written', () => {
+    const preview = pickAcceptanceReport({
+      checks: [
+        check(
+          'Final reply states 1+1 in one sentence',
+          'passed',
+          'The reply is one sentence. It ends with 。',
+        ),
+        check(
+          'Answer value is arithmetically correct',
+          'passed',
+          'The stated result is exactly 2.',
+        ),
+        { required: false, result: { verdict: 'failed' }, title: 'Optional polish' },
+      ],
+      rounds: [round('r1', 'failed'), round('r2', 'passed')],
     });
+
+    expect(preview).toEqual({
+      content:
+        '- ✅ **Final reply states 1+1 in one sentence** — The reply is one sentence.\n' +
+        '- ✅ **Answer value is arithmetically correct** — The stated result is exactly 2.',
+      passedChecks: 2,
+      runId: 'r2',
+      totalChecks: 2,
+    });
+    expect(preview?.content).not.toContain('已交付');
   });
 
-  it('returns nothing when the acceptance has produced nothing yet', () => {
-    expect(pickFinalDelivery({ artifacts: [], findings: [], rounds: [] })).toBeUndefined();
+  it('marks a reason cut short instead of ending it mid-word', () => {
+    const preview = pickAcceptanceReport({
+      checks: [check('Deliverable is in the reply', 'passed', `${'word '.repeat(60)}end.`)],
+      rounds: [round('r1', 'passed')],
+    });
+
+    expect(preview?.content).toMatch(/word…$/);
+  });
+
+  it('returns nothing before any round ran', () => {
+    expect(pickAcceptanceReport({ checks: [], rounds: [] })).toBeUndefined();
   });
 });
 
