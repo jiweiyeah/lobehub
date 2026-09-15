@@ -1750,6 +1750,43 @@ describe('GoalService', () => {
     ).toHaveLength(1);
   });
 
+  /**
+   * Regression: the terminal acceptance hung only off the problem node, so it
+   * rendered beside the first round instead of after the work it closes.
+   */
+  it('builds the Goal-level Acceptance Task on the delivered leaf Tasks', async () => {
+    const service = new GoalService(serverDB, userId);
+    const taskModel = new TaskModel(serverDB, userId);
+    const graph = await service.create({
+      requirement: 'Return two verified supplier quotes.',
+      title: 'Find two supplier quotes',
+      tasks: ['Research supplier A', 'Research supplier B'],
+    });
+
+    let acceptance;
+    for (let i = 0; i < 12 && !acceptance; i++) {
+      await service.tick(graph.goal.id);
+      const current = await service.graph(graph.goal.id);
+      for (const node of current.nodes) {
+        if (node.taskId && node.title !== 'Complete full Goal acceptance')
+          await taskModel.updateStatus(node.taskId, 'completed');
+      }
+      acceptance = current.nodes.find((node) => node.title === 'Complete full Goal acceptance');
+    }
+
+    const current = await service.graph(graph.goal.id);
+    const leaves = current.nodes
+      .filter((node) => node.title.startsWith('Research supplier'))
+      .map((node) => node.id);
+    expect(acceptance).toBeTruthy();
+    expect(
+      current.edges
+        .filter((edge) => edge.kind === 'depends_on' && edge.sourceNodeId === acceptance!.id)
+        .map((edge) => edge.targetNodeId)
+        .sort(),
+    ).toEqual(leaves.sort());
+  });
+
   it('parks a goal short of acceptance and reopens it when the measurement clears', async () => {
     // The measured half of acceptance: "followers >= 1000" is not a document a
     // verifier reads, it is a number. Until it holds, the acceptance Task must

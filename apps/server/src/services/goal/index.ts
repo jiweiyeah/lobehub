@@ -1731,6 +1731,25 @@ export class GoalService {
       if (problem) {
         await this.coordinatorGraph.createEdge(goalId, problem.id, result.node.id, 'decomposes');
       }
+      // Acceptance closes the whole Goal, so it builds on the work that ends each
+      // line of the graph. Linking the delivered leaf Tasks lays it out below them
+      // instead of beside the first round. They are all resolved, so nothing blocks.
+      const delivered = graph.nodes.filter(
+        (node) =>
+          node.kind === 'task' &&
+          node.status === 'resolved' &&
+          node.id !== result.node.id &&
+          !experimentOwner(graph, node.id),
+      );
+      const deliveredIds = new Set(delivered.map((node) => node.id));
+      const builtUpon = new Set(
+        graph.edges
+          .filter((edge) => edge.kind === 'depends_on' && deliveredIds.has(edge.sourceNodeId))
+          .map((edge) => edge.targetNodeId),
+      );
+      for (const leaf of delivered.filter((node) => !builtUpon.has(node.id))) {
+        await this.coordinatorGraph.createEdge(goalId, result.node.id, leaf.id, 'depends_on');
+      }
     }
     return {
       goalId,
