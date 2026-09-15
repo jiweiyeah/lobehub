@@ -37,6 +37,17 @@ export const goalAcceptanceState = (
   }
 };
 
+/**
+ * Whether the final acceptance has earned its report view: the acceptance Task
+ * finished (its node resolved) and the only thing left is the owner's sign-off,
+ * or it was already signed off. Anything short of that — still running, lost,
+ * failed, parked on a gate — is ordinary work and keeps the ordinary row.
+ */
+export const isFinalAcceptanceReady = (
+  nodeStatus: string,
+  state: GoalAcceptanceState | undefined,
+): boolean => nodeStatus === 'resolved' && (state === 'awaitingAcceptance' || state === 'accepted');
+
 interface RoundLike<Report> {
   report: Report | null;
   run: { id: string; status: string | null };

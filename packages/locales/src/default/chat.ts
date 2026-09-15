@@ -2006,10 +2006,6 @@ export default {
   'goalProcess.acceptance.rejected': 'Rejected',
   'goalProcess.goalAcceptance.state.accepted': 'Accepted',
   'goalProcess.goalAcceptance.state.awaitingAcceptance': 'Awaiting your acceptance',
-  'goalProcess.goalAcceptance.state.awaitingDecision': 'Did not pass — your call',
-  'goalProcess.goalAcceptance.state.errored': 'Acceptance error',
-  'goalProcess.goalAcceptance.state.inProgress': 'Acceptance in progress',
-  'goalProcess.goalAcceptance.state.rejected': 'Sent back',
   'goalProcess.goalAcceptance.reportTitle': 'Final acceptance report',
   'goalProcess.goalAcceptance.reportPending':
     'The report shows up here once the acceptance finishes a round.',

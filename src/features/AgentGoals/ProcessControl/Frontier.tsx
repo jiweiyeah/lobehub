@@ -348,14 +348,13 @@ const FrontierRow = memo<{
   const { view } = item;
   const { node } = view;
   const deps = view.dependsOn.map((id) => numbers.get(id)).filter(Boolean);
-  // The Goal's own acceptance is what its owner waits on: it names that state
-  // itself and carries the final report, instead of the generic acceptance chip.
-  const goalAcceptance = isGoalAcceptanceTask(view) ? view.acceptance : undefined;
-  // A gate opened on that acceptance is the same decision, so the report the
-  // owner decides on sits under the gate's question as well.
-  const gateAcceptance =
-    item.kind === 'gate' && subject && isGoalAcceptanceTask(subject)
-      ? subject.acceptance
+  // The Goal's final acceptance becomes its report only once everything ran
+  // through: the acceptance Task finished and waits on its owner's sign-off.
+  // Before that (running, lost, failed, parked on a gate) it stays an ordinary
+  // row; the card itself also checks the latest round actually passed.
+  const finalAcceptance =
+    isGoalAcceptanceTask(view) && item.kind === 'done' && node.status === 'resolved'
+      ? view.acceptance
       : undefined;
 
   // Coordinator-authored gates carry English strings; recognized shapes render
@@ -376,7 +375,7 @@ const FrontierRow = memo<{
     item.kind === 'verifying' && !!view.acceptance && !!ACCEPTANCE_CHIP[view.acceptance.status];
   const tag =
     item.kind === 'verifying'
-      ? verifyingChipShown || goalAcceptance
+      ? verifyingChipShown
         ? null
         : { color: 'info', text: t('goalProcess.tag.verifying') }
       : item.kind === 'stale'
@@ -396,7 +395,8 @@ const FrontierRow = memo<{
   return (
     <Block
       clickable
-      className={item.kind === 'done' ? styles.dim : undefined}
+      // The finished final acceptance is the Goal's headline, not a fading row.
+      className={item.kind === 'done' && !finalAcceptance ? styles.dim : undefined}
       padding={12}
       variant={'borderless'}
       onClick={() => onSelect(node.id)}
@@ -420,8 +420,8 @@ const FrontierRow = memo<{
         )}
         <Flexbox flex={1} />
         <Flexbox horizontal align={'center'} gap={8} style={{ flex: 'none' }}>
-          {goalAcceptance ? (
-            <GoalAcceptanceTag acceptance={goalAcceptance} />
+          {finalAcceptance ? (
+            <GoalAcceptanceTag acceptance={finalAcceptance} nodeStatus={node.status} />
           ) : (
             <AcceptanceChip view={view} />
           )}
@@ -430,9 +430,9 @@ const FrontierRow = memo<{
         </Flexbox>
       </Flexbox>
 
-      {goalAcceptance && (
+      {finalAcceptance && (
         <Flexbox className={styles.body} gap={8}>
-          <GoalAcceptanceReportCard acceptance={goalAcceptance} />
+          <GoalAcceptanceReportCard acceptance={finalAcceptance} nodeStatus={node.status} />
         </Flexbox>
       )}
 
@@ -453,7 +453,6 @@ const FrontierRow = memo<{
               {gateReasonText ?? view.decision.question}
             </Text>
           )}
-          {gateAcceptance && <GoalAcceptanceReportCard acceptance={gateAcceptance} />}
           {item.kind === 'stale' && <StaleBody view={view} />}
           <AttemptLedger view={subject ?? view} />
           {item.kind === 'gate' && canEdit && (

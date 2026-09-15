@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   goalAcceptanceState,
+  isFinalAcceptanceReady,
   latestAcceptanceReport,
   latestRunStatus,
 } from './goalAcceptanceReport';
@@ -30,6 +31,23 @@ describe('goalAcceptanceState', () => {
     expect(goalAcceptanceState('rejected')).toBe('rejected');
     expect(goalAcceptanceState('errored')).toBe('errored');
     expect(goalAcceptanceState('closed')).toBeUndefined();
+  });
+});
+
+describe('isFinalAcceptanceReady', () => {
+  /**
+   * Regression: the report view showed on an acceptance that was still lost and
+   * retrying, next to a ledger of failed attempts. It belongs only to a Goal
+   * whose final acceptance finished and waits on sign-off.
+   */
+  it('shows the report only once the acceptance task finished and passed', () => {
+    expect(isFinalAcceptanceReady('resolved', 'awaitingAcceptance')).toBe(true);
+    expect(isFinalAcceptanceReady('resolved', 'accepted')).toBe(true);
+    expect(isFinalAcceptanceReady('active', 'awaitingAcceptance')).toBe(false);
+    expect(isFinalAcceptanceReady('waiting', 'awaitingDecision')).toBe(false);
+    expect(isFinalAcceptanceReady('resolved', 'awaitingDecision')).toBe(false);
+    expect(isFinalAcceptanceReady('resolved', 'inProgress')).toBe(false);
+    expect(isFinalAcceptanceReady('resolved', undefined)).toBe(false);
   });
 });
 
