@@ -29,6 +29,30 @@ const write = procedure.use(withScopedPermission('agent:update'));
 const idInput = z.object({ id: z.string().uuid() });
 
 export const projectWorkingDirectoryRouter = router({
+  attachEnvironment: write
+    .input(z.object({ projectId: z.string(), environmentId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => ({
+      data: await ctx.directoryModel.attachEnvironment(input.projectId, input.environmentId),
+      success: true,
+    })),
+  listEnvironments: procedure
+    .input(z.object({ projectId: z.string().optional() }))
+    .query(async ({ ctx, input }) => ({
+      data: await ctx.directoryModel.listEnvironments(input.projectId),
+      success: true,
+    })),
+  saveEnvironment: write
+    .input(
+      z.object({
+        id: z.string().uuid().optional(),
+        name: z.string().trim().min(1).max(255),
+        repositoryUrl: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => ({
+      data: await ctx.directoryModel.saveEnvironment(input),
+      success: true,
+    })),
   bind: write
     .input(
       z.object({

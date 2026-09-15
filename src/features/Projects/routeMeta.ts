@@ -12,5 +12,5 @@ export const projectsRouteMeta = routeMeta({
 export const projectDirectoriesRouteMeta = routeMeta({
   icon: FolderClosedIcon,
   Skeleton: createSurfaceSkeleton('list'),
-  titleKey: 'project:directories.title',
+  titleKey: 'project:settings.title',
 });

@@ -17,10 +17,7 @@ export function ProjectDirectoriesPage() {
   if (!data) return null;
   return (
     <Flexbox flex={1} paddingInline={32} style={{ overflow: 'auto' }}>
-      <ProjectWorkingDirectories
-        coordinatorAgentId={data.data.project.coordinatorAgentId}
-        projectId={data.data.project.id}
-      />
+      <ProjectWorkingDirectories projectId={data.data.project.id} />
     </Flexbox>
   );
 }

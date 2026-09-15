@@ -6,7 +6,6 @@ import ConversationSegmentSkeleton from '@/components/Skeleton/Conversation/Segm
 import { delayed } from '@/components/Skeleton/Delayed';
 import { useAgentContext } from '@/features/Conversation/useAgentContext';
 import { useLocalPathReference } from '@/features/Conversation/useLocalPathReference';
-import { TopicProjectLink } from '@/features/Projects/WorkingDirectories/TopicProjectLink';
 import { useResourceAccess } from '@/features/ResourcePermission/useResourceAccess';
 import { useAgentStore } from '@/store/agent';
 import { agentByIdSelectors, builtinAgentSelectors } from '@/store/agent/selectors';
@@ -41,7 +40,6 @@ const ChatConversation = memo(() => {
 
   const content = (
     <Flexbox flex={1} height={'100%'} style={{ minWidth: 0 }}>
-      <TopicProjectLink topicId={topicId} />
       <TooltipGroup>
         <ConversationArea />
       </TooltipGroup>

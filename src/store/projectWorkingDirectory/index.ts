@@ -13,12 +13,38 @@ const directoryKey = (scope: string, projectId?: string) =>
   ['project/directories', scope, projectId ?? 'all'] as const;
 const topicsKey = (scope: string, id: string) => ['project/directoryTopics', scope, id] as const;
 
+const environmentKey = (scope: string, projectId?: string) =>
+  ['project/environments', scope, projectId ?? 'all'] as const;
 const createActions = () => ({
+  useFetchEnvironments: (projectId?: string) => {
+    const scope = useCacheScope();
+    return useClientDataSWR(environmentKey(scope, projectId), () =>
+      projectWorkingDirectoryService.listEnvironments(projectId),
+    );
+  },
+  saveEnvironment: async (
+    input: Parameters<typeof projectWorkingDirectoryService.saveEnvironment>[0],
+  ) => {
+    const result = await projectWorkingDirectoryService.saveEnvironment(input);
+    await mutate(
+      (key) =>
+        Array.isArray(key) &&
+        ['project/environments', 'project/directories'].includes(key[0]) &&
+        key[1] === getCacheScope(),
+    );
+    return result.data;
+  },
+  attachEnvironment: async (projectId: string, environmentId: string) => {
+    await projectWorkingDirectoryService.attachEnvironment(projectId, environmentId);
+    await mutate(environmentKey(getCacheScope(), projectId));
+  },
   bind: async (input: BindProjectDirectoryInput) => {
     const result = await projectWorkingDirectoryService.bind(input);
     await Promise.all([
       mutate(directoryKey(getCacheScope())),
       mutate(directoryKey(getCacheScope(), input.projectId)),
+      mutate(environmentKey(getCacheScope())),
+      mutate(environmentKey(getCacheScope(), input.projectId)),
     ]);
     return result.data;
   },

@@ -84,6 +84,82 @@ export class ProjectWorkingDirectoryModel {
     return row;
   }
 
+  async listEnvironments(projectId?: string) {
+    if (projectId) await this.project(projectId);
+    const rows = await this.db
+      .select({
+        id: environments.id,
+        name: environments.name,
+        configuration: environments.configuration,
+      })
+      .from(environments)
+      .where(and(buildWorkspaceWhere(this.scope(), environments), eq(environments.enabled, true)));
+    if (!projectId) return rows;
+    const links = await this.db
+      .select({ id: projectEnvironments.environmentId })
+      .from(projectEnvironments)
+      .where(
+        and(eq(projectEnvironments.projectId, projectId), eq(projectEnvironments.enabled, true)),
+      );
+    return rows.filter((row) => links.some((link) => link.id === row.id));
+  }
+
+  async saveEnvironment(input: { id?: string; name: string; repositoryUrl?: string }) {
+    const source = input.repositoryUrl?.trim();
+    const configuration: EnvironmentConfiguration = source
+      ? { sources: [{ kind: 'git', url: normalizeProjectRepository(source) }] }
+      : {};
+    if (input.id) {
+      const [existing] = await this.db
+        .select()
+        .from(environments)
+        .where(
+          and(
+            eq(environments.id, input.id),
+            buildWorkspaceWhere(this.scope(), environments),
+            eq(environments.userId, this.userId),
+          ),
+        );
+      if (!existing) throw new Error('Environment not found or access denied');
+      const [row] = await this.db
+        .update(environments)
+        .set({
+          name: input.name.trim(),
+          configuration: { ...existing.configuration, sources: configuration.sources ?? [] },
+          updatedAt: new Date(),
+        })
+        .where(eq(environments.id, existing.id))
+        .returning();
+      return row;
+    }
+    const [row] = await this.db
+      .insert(environments)
+      .values({
+        name: input.name.trim(),
+        configuration,
+        userId: this.userId,
+        workspaceId: this.workspaceId,
+      })
+      .returning();
+    return row;
+  }
+
+  async attachEnvironment(projectId: string, environmentId: string) {
+    await this.project(projectId, true);
+    if (!(await this.listEnvironments()).some((row) => row.id === environmentId))
+      throw new Error('Environment not found or access denied');
+    await this.db
+      .insert(projectEnvironments)
+      .values({
+        projectId,
+        environmentId,
+        workspaceId: this.workspaceId,
+        addedByUserId: this.userId,
+      })
+      .onConflictDoNothing();
+    return { projectId, environmentId };
+  }
+
   async bind(input: BindProjectDirectoryInput) {
     await this.project(input.projectId, true);
     return this.db.transaction(async (tx) => {
@@ -264,6 +340,7 @@ export class ProjectWorkingDirectoryModel {
         name: projectWorkingDirectories.name,
         projectId: projects.id,
         projectName: projects.name,
+        projectAvatar: projects.avatar,
         projectSlug: projects.slug,
         instanceId: environmentInstances.id,
         environmentId: environments.id,
@@ -380,6 +457,9 @@ export class ProjectWorkingDirectoryModel {
         id: topics.id,
         title: topics.title,
         agentId: topics.agentId,
+        agentTitle: agents.title,
+        agentName: agents.name,
+        agentAvatar: agents.avatar,
         updatedAt: topics.updatedAt,
       })
       .from(topics)

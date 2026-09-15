@@ -226,3 +226,57 @@ it('rejects credentials, clone options and non-repository URLs', () => {
   expect(normalizeProjectDirectory('C:\\work\\repo\\', 'win32')).toBe('C:\\work\\repo');
   expect(() => normalizeProjectDirectory('relative/path', 'linux')).toThrow();
 });
+
+describe('project environment settings', () => {
+  it('creates an abstract environment before a directory exists and links it to a project', async () => {
+    const env = await model.saveEnvironment({
+      name: 'Shared GitHub',
+      repositoryUrl: 'git@github.com:lobehub/lobehub.git',
+    });
+    expect(await model.listEnvironments()).toEqual([expect.objectContaining({ id: env.id })]);
+    expect(await model.listEnvironments(base.projectId)).toEqual([]);
+    await model.attachEnvironment(base.projectId, env.id);
+    expect(await model.listEnvironments(base.projectId)).toEqual([
+      expect.objectContaining({ id: env.id }),
+    ]);
+    const binding = await model.bind({ ...base, environmentId: env.id });
+    const [before] = await db
+      .select()
+      .from(environmentInstances)
+      .where(eq(environmentInstances.id, binding.environmentInstanceId!));
+    await model.saveEnvironment({
+      id: env.id,
+      name: 'Updated resource',
+      repositoryUrl: 'https://github.com/lobehub/new-repo',
+    });
+    const [after] = await db
+      .select()
+      .from(environmentInstances)
+      .where(eq(environmentInstances.id, binding.environmentInstanceId!));
+    expect(after.configurationSnapshot).toEqual(before.configurationSnapshot);
+    expect((await model.listEnvironments(base.projectId))[0].name).toBe('Updated resource');
+    expect(await other.listEnvironments()).toEqual([]);
+    await expect(other.saveEnvironment({ id: env.id, name: 'Denied' })).rejects.toThrow(
+      'access denied',
+    );
+    await expect(other.attachEnvironment(base.projectId, env.id)).rejects.toThrow('access denied');
+  });
+  it('returns the project icon and leading agent metadata with directory topics', async () => {
+    await db.update(projects).set({ avatar: '📦' }).where(eq(projects.id, base.projectId));
+    await db
+      .update(agents)
+      .set({ title: 'Design Agent', avatar: '🎨' })
+      .where(eq(agents.id, 'directory-agent'));
+    const binding = await model.bind(base);
+    const topic = await model.startTopic(binding.id, 'directory-agent', 'Draft the plan');
+    expect((await model.list())[0].projectAvatar).toBe('📦');
+    expect(await model.listTopics(binding.id)).toEqual([
+      expect.objectContaining({
+        id: topic.id,
+        agentId: 'directory-agent',
+        agentTitle: 'Design Agent',
+        agentAvatar: '🎨',
+      }),
+    ]);
+  });
+});

@@ -1,7 +1,16 @@
 export default {
+  'settings.title': 'Project settings',
+  'settings.environments': 'Environments',
+  'settings.addEnvironment': 'Add environment',
+  'settings.environmentDescription':
+    'Manage the shared resources used by this project. Bind a device directory from its menu in an Agent sidebar.',
+  'settings.noEnvironments': 'No environments associated yet',
+  'directories.environmentName': 'Environment name',
+  'directories.editEnvironment': 'Configure environment',
+
   'directories.coordinator': 'Project coordinator',
   'directories.environment': 'Environment',
-  'directories.newEnvironment': 'Create an environment or reuse this directory\u2019s binding',
+  'directories.newEnvironment': 'Create environment',
 
   'directories.boundRoot':
     'This conversation is bound to a project directory. Start a new conversation to use a different directory.',

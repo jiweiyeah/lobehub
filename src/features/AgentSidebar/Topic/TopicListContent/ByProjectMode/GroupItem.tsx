@@ -6,6 +6,8 @@ import {
   AccordionPanel,
   accordionStyles,
   AccordionTrigger,
+  Avatar,
+  Button,
   Text,
 } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar, cx } from 'antd-style';
@@ -20,12 +22,14 @@ import RingLoadingIcon from '@/components/RingLoading';
 import UnreadDot from '@/components/UnreadDot';
 import { useCommitWorkingDirectory } from '@/features/ChatInput/ControlBar/useCommitWorkingDirectory';
 import { AgentDirectoryActions } from '@/features/Projects/WorkingDirectories/AgentDirectoryActions';
+import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { useActiveLocation } from '@/hooks/useActiveLocation';
 import { useActiveRouteParams } from '@/hooks/useActiveRouteParams';
 import { useQueryRoute } from '@/hooks/useQueryRoute';
 import { useAgentStore } from '@/store/agent';
 import { useChatStore } from '@/store/chat';
 import { operationSelectors } from '@/store/chat/selectors';
+import { useProjectDirectoryStore } from '@/store/projectWorkingDirectory';
 import { getTopicWorkingDirectorySourcePath } from '@/utils/client/topic';
 
 import { buildPrefixedAgentRoutePath, parseAgentPathname } from '../../../utils/agentPathname';
@@ -163,6 +167,14 @@ CollapsedUnreadDot.displayName = 'CollapsedProjectUnreadDot';
 
 const GroupItem = memo<GroupItemComponentProps>(({ group, expanded }) => {
   const { id, title, children } = group;
+  const navigate = useWorkspaceAwareNavigate();
+  const directories = useProjectDirectoryStore((s) => s.useFetchDirectories)(
+    undefined,
+    !!children[0]?.projectWorkingDirectoryId,
+  );
+  const project = directories.data?.data.find(
+    (d) => d.id === children[0]?.projectWorkingDirectoryId,
+  );
 
   const workingDirectory = useMemo(
     () =>
@@ -234,20 +246,47 @@ const GroupItem = memo<GroupItemComponentProps>(({ group, expanded }) => {
   return (
     <AccordionItem value={id}>
       <AccordionHeader className={'accordion-header'}>
-        <AccordionTrigger style={{ paddingBlock: 4, paddingInline: 4 }}>
-          <Flexbox horizontal align="center" gap={8} height={24} style={{ overflow: 'hidden' }}>
-            <Center flex={'none'} height={24} width={28}>
-              <Icon
-                color={cssVar.colorTextTertiary}
-                icon={ProjectFolderIcon}
-                size={{ size: 15, strokeWidth: 1.5 }}
-              />
-            </Center>
-            <Text ellipsis fontSize={14} style={{ color: cssVar.colorTextSecondary, flex: 1 }}>
-              {title}
-            </Text>
-          </Flexbox>
-        </AccordionTrigger>
+        {project ? (
+          <>
+            <AccordionTrigger
+              aria-label={project.projectName}
+              style={{ flex: 'none', padding: 4 }}
+            />
+            <Button
+              type="text"
+              style={{
+                color: cssVar.colorText,
+                justifyContent: 'start',
+                flex: 1,
+                minWidth: 0,
+                padding: 4,
+              }}
+              onClick={() => navigate(`/project/${project.projectSlug ?? project.projectId}`)}
+            >
+              <Avatar avatar={project.projectAvatar || project.projectName} size={20} />
+              <Text ellipsis style={{ color: cssVar.colorText }}>
+                {project.projectName}
+              </Text>
+            </Button>
+          </>
+        ) : (
+          <>
+            <AccordionTrigger style={{ paddingBlock: 4, paddingInline: 4 }}>
+              <Flexbox horizontal align="center" gap={8} height={24} style={{ overflow: 'hidden' }}>
+                <Center flex={'none'} height={24} width={28}>
+                  <Icon
+                    color={cssVar.colorTextTertiary}
+                    icon={ProjectFolderIcon}
+                    size={{ size: 15, strokeWidth: 1.5 }}
+                  />
+                </Center>
+                <Text ellipsis fontSize={14} style={{ color: cssVar.colorTextSecondary, flex: 1 }}>
+                  {title}
+                </Text>
+              </Flexbox>
+            </AccordionTrigger>
+          </>
+        )}
         {action && (
           <div
             className={cx(

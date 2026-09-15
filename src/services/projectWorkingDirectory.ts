@@ -4,6 +4,12 @@ type Client = typeof lambdaClient.projectWorkingDirectory;
 export type BindProjectDirectoryInput = Parameters<Client['bind']['mutate']>[0];
 
 class ProjectWorkingDirectoryService {
+  listEnvironments = (projectId?: string) =>
+    lambdaClient.projectWorkingDirectory.listEnvironments.query({ projectId });
+  saveEnvironment = (input: Parameters<Client['saveEnvironment']['mutate']>[0]) =>
+    lambdaClient.projectWorkingDirectory.saveEnvironment.mutate(input);
+  attachEnvironment = (projectId: string, environmentId: string) =>
+    lambdaClient.projectWorkingDirectory.attachEnvironment.mutate({ projectId, environmentId });
   bind = (input: BindProjectDirectoryInput) =>
     lambdaClient.projectWorkingDirectory.bind.mutate(input);
   list = (projectId?: string) => lambdaClient.projectWorkingDirectory.list.query({ projectId });

@@ -1,7 +1,7 @@
 import { AGENT_CHAT_TOPIC_URL } from '@lobechat/const';
 import type { ChatTopic } from '@lobechat/types';
 import { ActionIcon, DropdownMenu, toast } from '@lobehub/ui/base-ui';
-import { LinkIcon, PlusIcon } from 'lucide-react';
+import { MoreHorizontalIcon, PlusIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -68,10 +68,7 @@ export function AgentDirectoryActions({
           ...bindings.map((directory) => ({
             key: `open-${directory.id}`,
             label: t('directories.openProject', { name: directory.projectName }),
-            onClick: () =>
-              navigate(
-                `/project/${directory.projectSlug ?? directory.projectId}/working-directories`,
-              ),
+            onClick: () => navigate(`/project/${directory.projectSlug ?? directory.projectId}`),
           })),
           ...bindings.map((directory) => ({
             key: `start-${directory.id}`,
@@ -81,9 +78,12 @@ export function AgentDirectoryActions({
           {
             key: 'bind',
             label: t('directories.bind'),
+            disabled: !deviceId,
             onClick: () =>
+              deviceId &&
               openBindDirectoryModal({
                 agentId,
+                environmentId: bindings[0]?.environmentId ?? undefined,
                 deviceId,
                 path,
                 repositoryUrl,
@@ -94,7 +94,7 @@ export function AgentDirectoryActions({
       >
         <ActionIcon
           disabled={pending}
-          icon={LinkIcon}
+          icon={MoreHorizontalIcon}
           size="small"
           title={t('directories.projectBinding')}
           onClick={(e) => e.stopPropagation()}

@@ -1008,12 +1008,12 @@ export const sharedMainAreaChildren: RouteObject[] = [
       },
       {
         element: dynamicElement(
-          () => import('@/routes/(main)/project/[projectId]/working-directories'),
+          () => import('@/routes/(main)/project/[projectId]/settings'),
           'Desktop > Project Working Directories',
-          { preloadId: 'project-working-directories' },
+          { preloadId: 'project-settings' },
         ),
         handle: { meta: projectDirectoriesRouteMeta },
-        path: 'working-directories',
+        path: 'settings',
       },
       {
         element: dynamicElement(
