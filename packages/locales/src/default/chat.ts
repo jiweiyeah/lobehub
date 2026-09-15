@@ -2006,10 +2006,6 @@ export default {
   'goalProcess.acceptance.rejected': 'Rejected',
   'goalProcess.goalAcceptance.state.accepted': 'Accepted',
   'goalProcess.goalAcceptance.state.awaitingAcceptance': 'Awaiting your acceptance',
-  'goalProcess.goalAcceptance.reportTitle': 'Final acceptance report',
-  'goalProcess.goalAcceptance.reportPending':
-    'The report shows up here once the acceptance finishes a round.',
-  'goalProcess.goalAcceptance.checks': '{{passed}}/{{total}} checks passed',
   'goalProcess.goalAcceptance.viewFull': 'Read full report',
   'goalProcess.goalAcceptance.review': 'Review delivery',
   'goalProcess.tag.verifying': 'Verifying',

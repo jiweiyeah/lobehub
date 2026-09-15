@@ -3,15 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   goalAcceptanceState,
   isFinalAcceptanceReady,
-  latestAcceptanceReport,
   latestRunStatus,
-  pickAcceptanceReport,
+  pickFinalDeliverable,
 } from './goalAcceptanceReport';
-
-const round = <Report>(id: string, status: string, report: Report | null = null) => ({
-  report,
-  run: { id, status },
-});
 
 describe('goalAcceptanceState', () => {
   /**
@@ -52,97 +46,77 @@ describe('isFinalAcceptanceReady', () => {
   });
 });
 
-describe('pickAcceptanceReport', () => {
-  const report = {
-    content: '# Final acceptance\n\nAll three checks passed.',
-    passedChecks: 3,
-    summary: 'All three checks passed.',
-    totalChecks: 3,
-  };
-  const check = (title: string, verdict: string, reasoning?: string) => ({
-    required: true,
-    result: { status: verdict, toulmin: { reasoning }, verdict },
-    title,
-  });
-
-  it('uses the report a round wrote', () => {
-    expect(
-      pickAcceptanceReport({
-        checks: [check('Answer is correct', 'passed')],
-        rounds: [round('r1', 'failed'), round('r2', 'passed', report)],
-      }),
-    ).toEqual({ content: report.content, passedChecks: 3, runId: 'r2', totalChecks: 3 });
-
-    expect(
-      pickAcceptanceReport({
-        checks: [],
-        rounds: [round('r1', 'passed', { ...report, content: null })],
-      }),
-    ).toMatchObject({ content: report.summary });
+describe('pickFinalDeliverable', () => {
+  const artifact = (
+    resourceId: string,
+    minute: number,
+    nodeId = 'task_work',
+    type = 'document',
+  ) => ({
+    createdAt: new Date(2026, 8, 16, 1, minute),
+    nodeId,
+    resourceId,
+    title: `Doc ${resourceId}`,
+    type,
   });
 
   /**
-   * Regression: with no written report the preview showed the acceptance Task's
-   * own delivery ("已交付：1+1等于2"), which is the product being accepted, not
-   * the acceptance report the owner signs off on.
+   * Regression: the finished Goal showed the acceptance report (and before that
+   * the acceptance Task's synthesized finding) in place of the task list, while
+   * the owner wanted to read the product the Goal made.
    */
-  it('reads the judgment off the latest round checks when no report was written', () => {
-    const preview = pickAcceptanceReport({
-      checks: [
-        check(
-          'Final reply states 1+1 in one sentence',
-          'passed',
-          'The reply is one sentence. It ends with 。',
-        ),
-        check(
-          'Answer value is arithmetically correct',
-          'passed',
-          'The stated result is exactly 2.',
-        ),
-        { required: false, result: { verdict: 'failed' }, title: 'Optional polish' },
-      ],
-      rounds: [round('r1', 'failed'), round('r2', 'passed')],
-    });
-
-    expect(preview).toEqual({
-      content:
-        '- ✅ **Final reply states 1+1 in one sentence** — The reply is one sentence.\n' +
-        '- ✅ **Answer value is arithmetically correct** — The stated result is exactly 2.',
-      passedChecks: 2,
-      runId: 'r2',
-      totalChecks: 2,
-    });
-    expect(preview?.content).not.toContain('已交付');
+  it('picks the newest document the work produced', () => {
+    expect(
+      pickFinalDeliverable(
+        [
+          artifact('docs_old', 1),
+          artifact('docs_new', 5),
+          artifact('file_1', 9, 'task_work', 'file'),
+        ],
+        'task_acceptance',
+      ),
+    ).toEqual({ documentId: 'docs_new', nodeId: 'task_work', title: 'Doc docs_new' });
   });
 
-  it('marks a reason cut short instead of ending it mid-word', () => {
-    const preview = pickAcceptanceReport({
-      checks: [check('Deliverable is in the reply', 'passed', `${'word '.repeat(60)}end.`)],
-      rounds: [round('r1', 'passed')],
-    });
+  it('prefers the work over a document the acceptance task wrote', () => {
+    expect(
+      pickFinalDeliverable(
+        [artifact('docs_work', 1), artifact('docs_check_notes', 9, 'task_acceptance')],
+        'task_acceptance',
+      ),
+    ).toMatchObject({ documentId: 'docs_work' });
 
-    expect(preview?.content).toMatch(/word…$/);
+    expect(
+      pickFinalDeliverable([artifact('docs_check_notes', 9, 'task_acceptance')], 'task_acceptance'),
+    ).toMatchObject({ documentId: 'docs_check_notes' });
   });
 
-  it('returns nothing before any round ran', () => {
-    expect(pickAcceptanceReport({ checks: [], rounds: [] })).toBeUndefined();
+  it('keeps the binding id so the document opens in-app', () => {
+    expect(
+      pickFinalDeliverable(
+        [{ ...artifact('docs_1', 1), agentDocumentId: 'agd_1' }],
+        'task_acceptance',
+      ),
+    ).toMatchObject({ agentDocumentId: 'agd_1', documentId: 'docs_1' });
+  });
+
+  it('returns nothing when the Goal left no document', () => {
+    expect(pickFinalDeliverable([], 'task_acceptance')).toBeUndefined();
+    expect(
+      pickFinalDeliverable([artifact('file_1', 1, 'task_work', 'file')], 'task_acceptance'),
+    ).toBeUndefined();
   });
 });
 
-describe('latestAcceptanceReport', () => {
-  it('returns the newest round that produced a report, with that round id', () => {
-    const rounds = [
-      round('r1', 'failed', { summary: 'first' }),
-      round('r2', 'failed', { summary: 'second' }),
-      round('r3', 'repairing'),
-    ];
-
-    expect(latestAcceptanceReport(rounds)).toEqual({ report: { summary: 'second' }, runId: 'r2' });
-    expect(latestRunStatus(rounds)).toBe('repairing');
-  });
-
-  it('returns nothing before any round wrote a report', () => {
-    expect(latestAcceptanceReport([round('r1', 'verifying')])).toBeUndefined();
+describe('latestRunStatus', () => {
+  it('reads the newest round', () => {
+    expect(
+      latestRunStatus([
+        { run: { status: 'failed' } },
+        { run: { status: 'failed' } },
+        { run: { status: 'repairing' } },
+      ]),
+    ).toBe('repairing');
     expect(latestRunStatus([])).toBeUndefined();
   });
 });
