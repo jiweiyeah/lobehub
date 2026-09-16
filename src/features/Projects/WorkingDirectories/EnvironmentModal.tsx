@@ -104,5 +104,6 @@ export const openEnvironmentModal = (options: EnvironmentOptions) =>
     }),
     content: <EnvironmentContent {...options} />,
     footer: null,
+    styles: { content: { padding: 0 } },
     width: 480,
   });

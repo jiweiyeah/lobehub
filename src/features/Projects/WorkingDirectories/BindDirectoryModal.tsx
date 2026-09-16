@@ -1,7 +1,6 @@
-import { Flexbox, Input } from '@lobehub/ui';
+import { Flexbox, Icon } from '@lobehub/ui';
 import {
   Button,
-  Checkbox,
   createModal,
   ModalFooter,
   Select,
@@ -9,17 +8,18 @@ import {
   useModalContext,
 } from '@lobehub/ui/base-ui';
 import { t } from 'i18next';
+import { FolderIcon, MonitorIcon, PlusIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import AsyncError from '@/components/AsyncError';
-import { useChatStore } from '@/store/chat';
 import { useDeviceStore } from '@/store/device';
 import { useProjectStore } from '@/store/project';
 import { useProjectDirectoryStore } from '@/store/projectWorkingDirectory';
 
 import { openCreateProjectModal } from '../CreateProjectModal';
 import { openEnvironmentModal } from './EnvironmentModal';
+import { useBindDirectory } from './useBindDirectory';
 
 export interface BindDirectoryOptions {
   agentId?: string;
@@ -36,38 +36,14 @@ function BindDirectoryContent(options: BindDirectoryOptions) {
   const { close } = useModalContext();
   const [environmentId, setEnvironmentId] = useState(options.environmentId ?? '');
   const [projectId, setProjectId] = useState(options.projectId ?? '');
-  const [name, setName] = useState(options.path.split(/[\\/]/).findLast(Boolean) ?? '');
-  const [includeTopics, setIncludeTopics] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<unknown>();
+  const name = options.path.split(/[\\/]/).findLast(Boolean) ?? '';
+  const { pending, error, save: bindDirectory } = useBindDirectory(options, close);
   const projects = useProjectStore((s) => s.useFetchProjectList)();
   const devices = useDeviceStore((s) => s.devices);
   const deviceName =
     devices.find((d) => d.deviceId === options.deviceId)?.friendlyName ?? options.deviceId;
   const environments = useProjectDirectoryStore((s) => s.useFetchEnvironments)();
-  const bind = useProjectDirectoryStore((s) => s.bind);
-  const save = async () => {
-    setPending(true);
-    setError(undefined);
-    try {
-      await bind({
-        agentId: options.agentId,
-        environmentId,
-        deviceId: options.deviceId,
-        name,
-        path: options.path,
-        projectId,
-        topicIds: includeTopics ? options.topicIds : undefined,
-      });
-      await useChatStore.getState().refreshTopic();
-      close();
-    } catch (error) {
-      console.error('Failed to bind project directory', error);
-      setError(error);
-    } finally {
-      setPending(false);
-    }
-  };
+  const save = () => bindDirectory(projectId, environmentId);
   return (
     <>
       <Flexbox
@@ -76,10 +52,18 @@ function BindDirectoryContent(options: BindDirectoryOptions) {
         style={{ maxHeight: 'calc(100dvh - 200px)', overflowY: 'auto' }}
       >
         <Text type="secondary">{t('directories.bindDescription')}</Text>
-        <Text>{deviceName}</Text>
-        <Text style={{ overflowWrap: 'anywhere' }} type="secondary">
-          {options.path}
-        </Text>
+        <Flexbox gap={8}>
+          <Flexbox horizontal align="center" gap={8}>
+            <Icon icon={MonitorIcon} size={16} />
+            <Text>{deviceName}</Text>
+          </Flexbox>
+          <Flexbox horizontal align="center" gap={8}>
+            <Icon icon={FolderIcon} size={16} />
+            <Text style={{ overflowWrap: 'anywhere' }} type="secondary">
+              {options.path}
+            </Text>
+          </Flexbox>
+        </Flexbox>
         <Text>{t('directories.project')}</Text>
         {projects.error ? (
           <AsyncError error={projects.error} onRetry={projects.mutate} />
@@ -94,7 +78,15 @@ function BindDirectoryContent(options: BindDirectoryOptions) {
                 label: project.name,
                 value: project.id,
               })),
-              { label: t('directories.createProject'), value: CREATE },
+              {
+                label: (
+                  <Flexbox horizontal align="center" gap={8}>
+                    <Icon icon={PlusIcon} size={16} />
+                    {t('directories.createProject')}
+                  </Flexbox>
+                ),
+                value: CREATE,
+              },
             ]}
             onChange={(value) =>
               value === CREATE
@@ -112,9 +104,35 @@ function BindDirectoryContent(options: BindDirectoryOptions) {
             disabled={pending}
             placeholder={t('directories.environment')}
             value={environmentId}
+            optionRender={(option) => {
+              const env = environments.data?.data.find((env) => env.id === option.value);
+              const source = env?.configuration.sources?.find((source) => source.kind === 'git');
+              return (
+                <Flexbox gap={2}>
+                  <Text>{option.label}</Text>
+                  {env && (
+                    <Text fontSize={12} type="secondary">
+                      {source?.url.replace('https://github.com/', 'GitHub · ') ||
+                        t('settings.noRepository')}
+                    </Text>
+                  )}
+                </Flexbox>
+              );
+            }}
             options={[
-              ...(environments.data?.data ?? []).map((env) => ({ label: env.name, value: env.id })),
-              { label: t('directories.newEnvironment'), value: CREATE },
+              ...(environments.data?.data ?? []).map((env) => ({
+                label: env.name,
+                value: env.id,
+              })),
+              {
+                label: (
+                  <Flexbox horizontal align="center" gap={8}>
+                    <Icon icon={PlusIcon} size={16} />
+                    {t('directories.newEnvironment')}
+                  </Flexbox>
+                ),
+                value: CREATE,
+              },
             ]}
             onChange={(value) =>
               value === CREATE
@@ -129,21 +147,10 @@ function BindDirectoryContent(options: BindDirectoryOptions) {
             }
           />
         )}
-        <Input
-          aria-label={t('directories.name')}
-          disabled={pending}
-          placeholder={t('directories.name')}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
         {!!options.topicIds?.length && (
-          <Checkbox
-            checked={includeTopics}
-            disabled={pending}
-            onChange={(checked) => setIncludeTopics(checked === true)}
-          >
-            {t('directories.fileTopics', { count: options.topicIds.length })}
-          </Checkbox>
+          <Text fontSize={12} type="secondary">
+            {t('directories.autoFileTopics', { count: options.topicIds.length })}
+          </Text>
         )}
         {error ? (
           <AsyncError
@@ -174,5 +181,6 @@ export const openBindDirectoryModal = (options: BindDirectoryOptions) =>
     title: t('directories.bind', { ns: 'project' }),
     content: <BindDirectoryContent {...options} />,
     footer: null,
+    styles: { content: { padding: 0 } },
     width: 520,
   });

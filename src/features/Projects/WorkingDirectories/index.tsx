@@ -1,5 +1,7 @@
-import { Flexbox } from '@lobehub/ui';
-import { Button, Select, Text } from '@lobehub/ui/base-ui';
+import { Flexbox, Icon } from '@lobehub/ui';
+import { ActionIcon, Select, Text } from '@lobehub/ui/base-ui';
+import { cssVar } from 'antd-style';
+import { FolderIcon, GitBranchIcon, MonitorIcon, PencilIcon, PlusIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -33,10 +35,7 @@ export function ProjectWorkingDirectories({ projectId }: { projectId: string }) 
     }
   };
   return (
-    <Flexbox gap={24} paddingBlock={24}>
-      <Text fontSize={24} weight={600}>
-        {t('settings.title')}
-      </Text>
+    <Flexbox gap={24}>
       <Flexbox gap={16}>
         <Flexbox horizontal align="center" gap={12} justify="space-between">
           <Text fontSize={18} style={{ whiteSpace: 'nowrap' }} weight={600}>
@@ -52,7 +51,15 @@ export function ProjectWorkingDirectories({ projectId }: { projectId: string }) 
                 ...(available.data?.data ?? [])
                   .filter((env) => !linked.data?.data.some((e) => e.id === env.id))
                   .map((env) => ({ label: env.name, value: env.id })),
-                { label: t('directories.newEnvironment'), value: '__create__' },
+                {
+                  label: (
+                    <Flexbox horizontal align="center" gap={8}>
+                      <Icon icon={PlusIcon} size={16} />
+                      {t('directories.newEnvironment')}
+                    </Flexbox>
+                  ),
+                  value: '__create__',
+                },
               ]}
               onChange={(id) =>
                 id === '__create__'
@@ -78,39 +85,91 @@ export function ProjectWorkingDirectories({ projectId }: { projectId: string }) 
         ) : !linked.data?.data.length ? (
           <Text type="secondary">{t('settings.noEnvironments')}</Text>
         ) : (
-          linked.data.data.map((env) => (
-            <Flexbox gap={8} key={env.id} paddingBlock={12}>
-              <Flexbox horizontal align="center" justify="space-between">
-                <Text weight={600}>{env.name}</Text>
-                <Button
-                  onClick={() =>
-                    openEnvironmentModal({
-                      id: env.id,
-                      name: env.name,
-                      repositoryUrl: env.configuration.sources?.find((s) => s.kind === 'git')?.url,
-                      onSaved: () => {},
-                    })
+          <Flexbox
+            style={{
+              border: `1px solid ${cssVar.colorBorderSecondary}`,
+              borderRadius: 8,
+              overflow: 'hidden',
+            }}
+          >
+            {linked.data.data.map((env, index) => {
+              const source = env.configuration.sources?.find((s) => s.kind === 'git');
+              const bindings = (directories.data?.data ?? []).filter(
+                (d) => d.environmentId === env.id,
+              );
+              return (
+                <Flexbox
+                  gap={12}
+                  key={env.id}
+                  padding={20}
+                  style={
+                    index ? { borderTop: `1px solid ${cssVar.colorBorderSecondary}` } : undefined
                   }
                 >
-                  {t('directories.editEnvironment')}
-                </Button>
-              </Flexbox>
-              {env.configuration.sources?.map((source) =>
-                source.kind === 'git' ? (
-                  <a href={source.url} key={source.url} rel="noreferrer" target="_blank">
-                    {source.url}
-                  </a>
-                ) : null,
-              )}
-              {(directories.data?.data ?? [])
-                .filter((d) => d.environmentId === env.id)
-                .map((d) => (
-                  <Text key={d.id} type="secondary">
-                    {d.deviceName || d.deviceId} · {d.path}
-                  </Text>
-                ))}
-            </Flexbox>
-          ))
+                  <Flexbox horizontal align="center" gap={12} justify="space-between">
+                    <Flexbox horizontal align="center" gap={10}>
+                      <Icon icon={source ? GitBranchIcon : FolderIcon} size={20} />
+                      <Text weight={600}>{env.name}</Text>
+                    </Flexbox>
+                    <ActionIcon
+                      aria-label={t('directories.editEnvironment')}
+                      icon={PencilIcon}
+                      title={t('directories.editEnvironment')}
+                      onClick={() =>
+                        openEnvironmentModal({
+                          id: env.id,
+                          name: env.name,
+                          repositoryUrl: source?.url,
+                          onSaved: () => {},
+                        })
+                      }
+                    />
+                  </Flexbox>
+                  {source ? (
+                    <a
+                      href={source.url}
+                      rel="noreferrer"
+                      style={{ color: cssVar.colorTextSecondary, overflowWrap: 'anywhere' }}
+                      target="_blank"
+                    >
+                      {source.url.replace('https://github.com/', 'GitHub · ')}
+                    </a>
+                  ) : (
+                    <Text fontSize={13} type="secondary">
+                      {t('settings.noRepository')}
+                    </Text>
+                  )}
+                  <Flexbox gap={8}>
+                    {bindings.length ? (
+                      bindings.map((d) => (
+                        <Flexbox horizontal align="start" gap={8} key={d.id}>
+                          <Icon
+                            icon={MonitorIcon}
+                            size={16}
+                            style={{ marginTop: 3, flexShrink: 0 }}
+                          />
+                          <Flexbox gap={2}>
+                            <Text fontSize={13}>{d.deviceName || d.deviceId}</Text>
+                            <Text
+                              fontSize={12}
+                              style={{ overflowWrap: 'anywhere' }}
+                              type="secondary"
+                            >
+                              {d.path}
+                            </Text>
+                          </Flexbox>
+                        </Flexbox>
+                      ))
+                    ) : (
+                      <Text fontSize={13} type="secondary">
+                        {t('settings.noDirectories')}
+                      </Text>
+                    )}
+                  </Flexbox>
+                </Flexbox>
+              );
+            })}
+          </Flexbox>
         )}
         {(directories.data?.data ?? [])
           .filter((d) => !d.instanceId)
@@ -119,13 +178,13 @@ export function ProjectWorkingDirectories({ projectId }: { projectId: string }) 
               <Text>
                 {d.name} · {d.path}
               </Text>
-              <Button
+              <ActionIcon
+                icon={PlusIcon}
+                title={t('directories.bind')}
                 onClick={() =>
                   openBindDirectoryModal({ projectId, deviceId: d.deviceId, path: d.path })
                 }
-              >
-                {t('directories.bind')}
-              </Button>
+              />
             </Flexbox>
           ))}
       </Flexbox>

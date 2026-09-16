@@ -48,7 +48,7 @@ export function AgentDirectoryActions({
     setPending(true);
     try {
       if (id) {
-        const topic = await startTopic(id, agentId, path.split(/[\\/]/).at(-1) || path);
+        const topic = await startTopic(id, agentId, t('directories.untitled'));
         navigate(AGENT_CHAT_TOPIC_URL(agentId, topic.id));
       } else await onLegacyStart();
     } catch (error) {
@@ -71,25 +71,29 @@ export function AgentDirectoryActions({
             onClick: () => navigate(`/project/${directory.projectSlug ?? directory.projectId}`),
           })),
           ...bindings.map((directory) => ({
-            key: `start-${directory.id}`,
-            label: t('directories.startInProject', { name: directory.projectName }),
-            onClick: () => void start(directory.id),
-          })),
-          {
-            key: 'bind',
-            label: t('directories.bind'),
-            disabled: !deviceId,
+            key: `settings-${directory.id}`,
+            label: t('settings.title'),
             onClick: () =>
-              deviceId &&
-              openBindDirectoryModal({
-                agentId,
-                environmentId: bindings[0]?.environmentId ?? undefined,
-                deviceId,
-                path,
-                repositoryUrl,
-                topicIds: topics.map((topic) => topic.id),
-              }),
-          },
+              navigate(`/project/${directory.projectSlug ?? directory.projectId}/settings`),
+          })),
+          ...(bindings.length
+            ? []
+            : [
+                {
+                  key: 'bind',
+                  label: t('directories.bind'),
+                  disabled: !deviceId,
+                  onClick: () =>
+                    deviceId &&
+                    openBindDirectoryModal({
+                      agentId,
+                      deviceId,
+                      path,
+                      repositoryUrl,
+                      topicIds: topics.map((topic) => topic.id),
+                    }),
+                },
+              ]),
         ]}
       >
         <ActionIcon

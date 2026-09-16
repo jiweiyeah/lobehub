@@ -1,4 +1,10 @@
 export default {
+  'directories.autoFileTopics': 'All {{count}} existing topics will be linked to this project.',
+  'settings.general': 'General',
+  'settings.generalDescription': 'Manage the name people see for this project.',
+  'settings.noRepository': 'No GitHub repository linked',
+  'settings.noDirectories':
+    'Link a working directory from an Agent’s directory menu to start working here.',
   'settings.title': 'Project settings',
   'settings.environments': 'Environments',
   'settings.addEnvironment': 'Add environment',
@@ -36,7 +42,7 @@ export default {
   'directories.start': 'Start work here',
   'directories.chooseAgent': 'Choose Agent',
   'directories.conversations': 'Conversations',
-  'directories.noConversations': 'No conversations in this directory yet.',
+  'directories.noConversations': 'No conversations in this environment yet.',
   'directories.untitled': 'Untitled conversation',
   'directories.openProject': 'Open project: {{name}}',
   'directories.startInProject': 'Start work in {{name}}',

@@ -43,14 +43,35 @@ const createActions = () => ({
     await Promise.all([
       mutate(directoryKey(getCacheScope())),
       mutate(directoryKey(getCacheScope(), input.projectId)),
+      mutate(
+        (key) =>
+          Array.isArray(key) &&
+          key[0] === 'project/environmentTopics' &&
+          key[1] === getCacheScope(),
+      ),
       mutate(environmentKey(getCacheScope())),
       mutate(environmentKey(getCacheScope(), input.projectId)),
     ]);
     return result.data;
   },
+  useFetchEnvironmentTopics: (directoryIds: string[]) => {
+    const scope = useCacheScope();
+    const ids = [...directoryIds].sort();
+    return useClientDataSWR(['project/environmentTopics', scope, ...ids], () =>
+      projectWorkingDirectoryService.listEnvironmentTopics(ids),
+    );
+  },
   startTopic: async (id: string, agentId: string, title: string) => {
     const result = await projectWorkingDirectoryService.startTopic({ agentId, id, title });
-    await mutate(topicsKey(getCacheScope(), id));
+    await Promise.all([
+      mutate(topicsKey(getCacheScope(), id)),
+      mutate(
+        (key) =>
+          Array.isArray(key) &&
+          key[0] === 'project/environmentTopics' &&
+          key[1] === getCacheScope(),
+      ),
+    ]);
     return result.data;
   },
   useFetchDirectories: (projectId?: string, enabled = true) => {

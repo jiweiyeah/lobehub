@@ -7,7 +7,6 @@ import {
   accordionStyles,
   AccordionTrigger,
   Avatar,
-  Button,
   Text,
 } from '@lobehub/ui/base-ui';
 import { createStaticStyles, cssVar, cx } from 'antd-style';
@@ -246,47 +245,42 @@ const GroupItem = memo<GroupItemComponentProps>(({ group, expanded }) => {
   return (
     <AccordionItem value={id}>
       <AccordionHeader className={'accordion-header'}>
-        {project ? (
-          <>
-            <AccordionTrigger
-              aria-label={project.projectName}
-              style={{ flex: 'none', padding: 4 }}
-            />
-            <Button
-              type="text"
-              style={{
-                color: cssVar.colorText,
-                justifyContent: 'start',
-                flex: 1,
-                minWidth: 0,
-                padding: 4,
-              }}
-              onClick={() => navigate(`/project/${project.projectSlug ?? project.projectId}`)}
+        <AccordionTrigger style={{ paddingBlock: 4, paddingInline: 4 }}>
+          <Flexbox horizontal align="center" gap={8} height={24} style={{ overflow: 'hidden' }}>
+            <Center flex="none" height={24} width={28}>
+              {project ? (
+                <Avatar avatar={project.projectAvatar || project.projectName} size={18} />
+              ) : (
+                <Icon
+                  color={cssVar.colorTextTertiary}
+                  icon={ProjectFolderIcon}
+                  size={{ size: 15, strokeWidth: 1.5 }}
+                />
+              )}
+            </Center>
+            <Text
+              ellipsis
+              fontSize={14}
+              style={{ color: project ? cssVar.colorText : cssVar.colorTextSecondary, flex: 1 }}
             >
-              <Avatar avatar={project.projectAvatar || project.projectName} size={20} />
-              <Text ellipsis style={{ color: cssVar.colorText }}>
-                {project.projectName}
-              </Text>
-            </Button>
-          </>
-        ) : (
-          <>
-            <AccordionTrigger style={{ paddingBlock: 4, paddingInline: 4 }}>
-              <Flexbox horizontal align="center" gap={8} height={24} style={{ overflow: 'hidden' }}>
-                <Center flex={'none'} height={24} width={28}>
-                  <Icon
-                    color={cssVar.colorTextTertiary}
-                    icon={ProjectFolderIcon}
-                    size={{ size: 15, strokeWidth: 1.5 }}
-                  />
-                </Center>
-                <Text ellipsis fontSize={14} style={{ color: cssVar.colorTextSecondary, flex: 1 }}>
-                  {title}
-                </Text>
-              </Flexbox>
-            </AccordionTrigger>
-          </>
-        )}
+              {project ? (
+                <a
+                  href={`/project/${project.projectSlug ?? project.projectId}`}
+                  style={{ color: 'inherit', textDecoration: 'none' }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    navigate(`/project/${project.projectSlug ?? project.projectId}`);
+                  }}
+                >
+                  {project.projectName}
+                </a>
+              ) : (
+                title
+              )}
+            </Text>
+          </Flexbox>
+        </AccordionTrigger>
         {action && (
           <div
             className={cx(

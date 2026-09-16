@@ -228,6 +228,6 @@ it('uses the bound project name and lets the user jump directly to that project'
       />
     </AccordionRoot>,
   );
-  fireEvent.click(screen.getByRole('button', { name: '📦 Shared Project' }));
+  fireEvent.click(screen.getByRole('link', { name: 'Shared Project' }));
   expect(routerPushMock).toHaveBeenCalledWith('/project/shared-project');
 });
