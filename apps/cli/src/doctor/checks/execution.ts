@@ -99,6 +99,14 @@ const agentReadiness: DoctorCheck = {
         status: 'fail',
       };
 
+    if (credential.source === 'endpoint-only')
+      return {
+        detail: `Agent ${agentId} runs ${model} on ${provider}, configured with an endpoint and no key — normal for a local runtime, unverifiable from here.`,
+        evidence: withCredential,
+        fix: `If "${provider}" does need a key, add one; otherwise check the endpoint is reachable from the server.`,
+        status: 'warn',
+      };
+
     if (credential.source === 'unknown')
       return {
         detail: `Agent ${agentId} runs ${model} on ${provider}, which is enabled — but this credential cannot read key vaults, so the key itself was not verified.`,
@@ -107,8 +115,17 @@ const agentReadiness: DoctorCheck = {
         status: 'warn',
       };
 
+    if (credential.source === 'server-enabled')
+      return {
+        // Deliberately not a claim that a key exists: server-side keys are
+        // invisible here, and some providers are enabled regardless of one.
+        detail: `Agent ${agentId} runs ${model} on ${provider}, which the server reports as enabled (server-side keys are not visible to the CLI).`,
+        evidence: withCredential,
+        status: 'ok',
+      };
+
     return {
-      detail: `Agent ${agentId} runs ${model} on ${provider}, with a key from ${credential.source === 'server' ? 'the server environment' : 'the account'}.`,
+      detail: `Agent ${agentId} runs ${model} on ${provider}, with a key stored on the account.`,
       evidence: withCredential,
       status: 'ok',
     };
@@ -140,42 +157,51 @@ async function resolveAgent(client: any, requested: string): Promise<ResolvedAge
   return config ? { agentId, config } : undefined;
 }
 
-/** Key-vault fields that are addresses rather than credentials. */
+/** Key-vault fields that are an address rather than a credential. */
 const NON_SECRET_VAULT_FIELDS = new Set(['baseURL', 'endpoint', 'apiVersion']);
 
+export type CredentialSource = 'account' | 'endpoint-only' | 'server-enabled' | 'none' | 'unknown';
+
 /**
- * Where the credential for one provider comes from, without ever reading its
- * value into the report.
+ * Where a provider's credential comes from — without ever reading its value.
  *
- * `getAiProviderById` returns the decrypted key vault for a full-access
- * caller and omits it entirely for a restricted API key — which is why
- * "unknown" is a distinct answer from "none".
+ * Four answers, because the CLI genuinely cannot reach the same certainty in
+ * every case:
+ *  - `account`: a secret is stored in this account's key vault.
+ *  - `endpoint-only`: a base URL and nothing else, which is the normal shape
+ *    for a local runtime (Ollama, LM Studio) that needs no key at all.
+ *  - `server-enabled`: the server reports the provider enabled. That is NOT
+ *    proof of a key — `deepseek` is enabled unconditionally in the server's
+ *    own config, and `ENABLED_OPENAI` / `ENABLED_OLLAMA` default to true — and
+ *    server-side keys are invisible to the CLI either way.
+ *  - `unknown`: a restricted API key gets the provider back with no key vault
+ *    at all, so nothing can be concluded.
  */
 async function readProviderCredential(
   client: any,
   provider: string,
   enabledOnServer: boolean,
-): Promise<{ source: 'account' | 'server' | 'none' | 'unknown' }> {
+): Promise<{ source: CredentialSource }> {
   let detail: Record<string, any> | undefined;
   try {
     detail = (await client.aiProvider.getAiProviderById.query({ id: provider })) ?? undefined;
   } catch {
-    return { source: enabledOnServer ? 'server' : 'unknown' };
+    return { source: enabledOnServer ? 'server-enabled' : 'unknown' };
   }
 
   const vault = (detail?.keyVaults ?? undefined) as Record<string, unknown> | undefined;
   if (vault) {
-    const hasSecret = Object.entries(vault).some(
-      ([key, value]) =>
-        !NON_SECRET_VAULT_FIELDS.has(key) && typeof value === 'string' && value.length > 0,
+    const entries = Object.entries(vault).filter(
+      ([, value]) => typeof value === 'string' && value.length > 0,
     );
-    if (hasSecret) return { source: 'account' };
+    if (entries.some(([key]) => !NON_SECRET_VAULT_FIELDS.has(key))) return { source: 'account' };
+    if (entries.length > 0) return { source: 'endpoint-only' };
   }
 
-  if (enabledOnServer) return { source: 'server' };
+  if (enabledOnServer) return { source: 'server-enabled' };
 
-  // A full-access caller that saw an empty vault knows there is no key; a
-  // restricted one cannot tell the two apart.
+  // A caller that could read the vault and found it empty knows there is no
+  // key; a restricted one cannot tell that apart from not being allowed to look.
   return { source: vault ? 'none' : 'unknown' };
 }
 
@@ -313,6 +339,10 @@ const roundTrip: DoctorCheck = {
     // Poll immediately, then every couple of seconds: a fast model can be done
     // before the first interval would have elapsed.
     let waitMs = 0;
+    // "No longer tracked" only means finished if we saw it running first. On
+    // the very first poll it means nothing was observed at all, and calling
+    // that a pass would make this check unable to fail.
+    let observedRunning = false;
     while (Date.now() < deadline) {
       if (waitMs) await delay(waitMs);
       waitMs = 2000;
@@ -330,14 +360,28 @@ const roundTrip: DoctorCheck = {
         topicId: started.topicId,
       };
 
-      // A run the server no longer tracks has finished (or expired) — the same
-      // reading `lh agent run` takes when its event stream drops.
-      if (!state)
+      if (!state) {
+        // A run the server no longer tracks has finished (or expired) — the
+        // same reading `lh agent run` takes when its event stream drops. But
+        // only if we saw it running first: the server also answers null when
+        // there is no state at all, and passing on that would make this check
+        // incapable of failing.
+        if (observedRunning)
+          return {
+            detail: `Run ${operationId} finished (no longer tracked) after ${elapsedSeconds}s.`,
+            evidence,
+            status: 'ok',
+          };
+
         return {
-          detail: `Run ${operationId} finished (no longer tracked) after ${elapsedSeconds}s.`,
+          detail: `The server returned no state for run ${operationId}, so nothing was observed to run.`,
           evidence,
-          status: 'ok',
+          fix: `Check it directly with '${CLI_PRIMARY_BIN} agent status ${operationId}'.`,
+          status: 'warn',
         };
+      }
+
+      observedRunning = true;
 
       if (state.hasError)
         return {

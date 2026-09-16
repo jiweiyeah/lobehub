@@ -62,9 +62,20 @@ const workspaceScope: DoctorCheck = {
     if (!stored)
       return { detail: 'Personal scope — no workspace selected.', evidence, status: 'ok' };
 
-    const reason = !identity
-      ? 'the current credentials do not identify an account'
-      : identity !== stored.identity
+    // An API key carries no readable subject, so `identity` is undefined for a
+    // perfectly valid saved scope whenever LOBEHUB_CLI_API_KEY is exported for
+    // one command. That is "cannot tell", not "stale" — marking it repairable
+    // would let `--fix` delete a selection that is still the user's.
+    if (!identity)
+      return {
+        detail: `The saved scope ${stored.workspaceId} is ignored while the current credentials do not identify an account.`,
+        evidence,
+        fix: 'Expected under an API key: set LOBEHUB_WORKSPACE_ID to scope these commands.',
+        status: 'warn',
+      };
+
+    const reason =
+      identity !== stored.identity
         ? 'it was saved under a different account'
         : stored.serverUrl !== serverUrl
           ? `it was saved for ${stored.serverUrl}`

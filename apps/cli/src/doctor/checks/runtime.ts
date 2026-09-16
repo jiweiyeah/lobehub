@@ -145,7 +145,10 @@ const cliHome: DoctorCheck = {
 
     if (repairable === 'settings') {
       const settingsFile = path.join(configDir(), 'settings.json');
-      const backup = `${settingsFile}.bak`;
+      // Never clobber an earlier backup: the second corruption would destroy
+      // the copy the first repair preserved, which nothing has diagnosed.
+      let backup = `${settingsFile}.bak`;
+      if (fs.existsSync(backup)) backup = `${settingsFile}.${Date.now()}.bak`;
       fs.renameSync(settingsFile, backup);
       return `moved the unparseable settings.json to ${backup}`;
     }
@@ -299,10 +302,24 @@ const cliUpToDate: DoctorCheck = {
   id: 'runtime.latest',
   network: true,
   profiles: ['core'],
-  run: async (): Promise<CheckOutcome> => {
+  run: async (ctx): Promise<CheckOutcome> => {
     let latest: string;
     try {
-      latest = await fetchLatestVersion(cliPackageName, 'latest');
+      // Bound the request here rather than letting the runner's timeout fire:
+      // that would surface as `fail` (and a non-zero exit) for what this check
+      // has decided is only ever a warning.
+      latest = await Promise.race([
+        fetchLatestVersion(cliPackageName, 'latest'),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(`the npm registry did not answer within ${ctx.options.timeoutMs}ms`),
+              ),
+            Math.max(1000, ctx.options.timeoutMs - 500),
+          ),
+        ),
+      ]);
     } catch (error) {
       return {
         detail: `Could not reach the npm registry: ${error instanceof Error ? error.message : String(error)}.`,

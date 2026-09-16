@@ -34,6 +34,7 @@ describe('doctor command', () => {
   });
 
   afterEach(() => {
+    process.exitCode = 0;
     report.value.status = 'ok';
     exitSpy.mockRestore();
     logSpy.mockRestore();
@@ -106,12 +107,15 @@ describe('doctor command', () => {
     expect(logSpy.mock.calls.at(-1)?.[0]).toContain('"profile": "core"');
   });
 
-  it('exits non-zero only when something failed', async () => {
+  it('sets a non-zero exit code only when something failed', async () => {
+    // Never `process.exit()`: a piped JSON report would be truncated mid-object.
     await run();
+    expect(process.exitCode).toBe(0);
     expect(exitSpy).not.toHaveBeenCalled();
 
     report.value.status = 'fail';
     await run();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(process.exitCode).toBe(1);
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 });

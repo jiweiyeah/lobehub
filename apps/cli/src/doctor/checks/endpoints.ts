@@ -12,6 +12,7 @@ import {
   resolveServerUrl,
 } from '../../settings';
 import { probeServerVersion } from '../probes';
+import { redactUrlCredentials } from '../redact';
 import type { CheckOutcome, DoctorCheck } from '../types';
 
 export interface ResolvedEndpoints {
@@ -61,7 +62,15 @@ const endpointResolution: DoctorCheck = {
   profiles: ['core'],
   run: (): CheckOutcome => {
     const endpoints = resolveEndpoints();
-    const evidence = { ...endpoints };
+    // Everything below this line goes into the report, so it carries the
+    // redacted forms; `resolveEndpoints()` keeps returning the real URLs for
+    // the checks that connect with them.
+    const shown = {
+      agentGatewayUrl: redactUrlCredentials(endpoints.agentGatewayUrl),
+      gatewayUrl: redactUrlCredentials(endpoints.gatewayUrl),
+      serverUrl: redactUrlCredentials(endpoints.serverUrl),
+    };
+    const evidence = { ...endpoints, ...shown };
     const selfHosted = endpoints.serverUrl !== OFFICIAL_SERVER_URL;
 
     // A self-hosted server with the official device gateway is the trap: only
@@ -75,7 +84,7 @@ const endpointResolution: DoctorCheck = {
     // own handshake check is what fails concretely when it matters.
     if (selfHosted && endpoints.gatewaySource === 'built-in default')
       return {
-        detail: `Server is ${endpoints.serverUrl} but the device gateway is still the official ${OFFICIAL_GATEWAY_URL}, which has never heard of that server.`,
+        detail: `Server is ${shown.serverUrl} but the device gateway is still the official ${OFFICIAL_GATEWAY_URL}, which has never heard of that server.`,
         evidence,
         fix: "Only matters for device commands: pass --gateway <url> to 'lh connect' (it is persisted).",
         status: 'warn',
@@ -86,7 +95,7 @@ const endpointResolution: DoctorCheck = {
     // shows up later as an opaque "credential rejected" handshake failure.
     if (isLoopback(endpoints.gatewayUrl) !== isLoopback(endpoints.serverUrl))
       return {
-        detail: `Server ${endpoints.serverUrl} and device gateway ${endpoints.gatewayUrl} are not on the same side of localhost.`,
+        detail: `Server ${shown.serverUrl} and device gateway ${shown.gatewayUrl} are not on the same side of localhost.`,
         evidence,
         fix: isLoopback(endpoints.gatewayUrl)
           ? "Drop the local gateway: 'lh connect --gateway <the server's gateway>'."
@@ -96,14 +105,14 @@ const endpointResolution: DoctorCheck = {
 
     if (selfHosted && endpoints.agentGatewayUrl === OFFICIAL_AGENT_GATEWAY_URL)
       return {
-        detail: `Server is ${endpoints.serverUrl} but agent streaming still points at the official agent gateway.`,
+        detail: `Server is ${shown.serverUrl} but agent streaming still points at the official agent gateway.`,
         evidence,
         fix: 'Set AGENT_GATEWAY_URL to your own agent gateway, or run agent commands with --sse.',
         status: 'warn',
       };
 
     return {
-      detail: `server ${endpoints.serverUrl} (${endpoints.serverSource}), device gateway ${endpoints.gatewayUrl} (${endpoints.gatewaySource}).`,
+      detail: `server ${shown.serverUrl} (${endpoints.serverSource}), device gateway ${shown.gatewayUrl} (${endpoints.gatewaySource}).`,
       evidence,
       status: 'ok',
     };
@@ -169,9 +178,10 @@ const serverReachable: DoctorCheck = {
       probe = await probeServerVersion(ctx);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const serverUrl = redactUrlCredentials(resolveServerUrl());
       return {
-        detail: `${resolveServerUrl()} is unreachable: ${message}.`,
-        evidence: { error: message, serverUrl: resolveServerUrl() },
+        detail: `${serverUrl} is unreachable: ${message}.`,
+        evidence: { error: message, serverUrl },
         fix: classifyNetworkError(message),
         status: 'fail',
       };
@@ -186,7 +196,7 @@ const serverReachable: DoctorCheck = {
 
     if (probe.statusCode >= 500)
       return {
-        detail: `${probe.serverUrl} answered ${probe.statusCode}.`,
+        detail: `${evidence.serverUrl} answered ${probe.statusCode}.`,
         evidence,
         fix: 'The server is up but unhealthy — check its logs before debugging the CLI.',
         status: 'fail',
@@ -194,40 +204,20 @@ const serverReachable: DoctorCheck = {
 
     if (probe.statusCode >= 400)
       return {
-        detail: `${probe.serverUrl}/api/version answered ${probe.statusCode}.`,
+        detail: `${evidence.serverUrl}/api/version answered ${probe.statusCode}.`,
         evidence,
         fix: 'Something in front of the server (WAF, auth proxy) is intercepting requests.',
         status: 'warn',
       };
 
     return {
-      detail: `${probe.serverUrl} responded in ${probe.latencyMs}ms${probe.version ? `, running ${probe.version}` : ''}.`,
+      detail: `${evidence.serverUrl} responded in ${probe.latencyMs}ms${probe.version ? `, running ${probe.version}` : ''}.`,
       evidence,
       status: 'ok',
     };
   },
   title: 'server reachable',
 };
-
-/**
- * `http://user:password@proxy:8080` is a normal way to configure a corporate
- * proxy, and the whole report — evidence included — is meant to be pasted into
- * an issue. Keep the host, drop the credential.
- */
-function redactUrlCredentials(value: string | undefined): string | undefined {
-  if (!value) return value;
-
-  try {
-    const url = new URL(value);
-    if (!url.username && !url.password) return value;
-    if (url.username) url.username = '***';
-    if (url.password) url.password = '***';
-    return url.toString();
-  } catch {
-    // Not a URL (NO_PROXY is a host list) — nothing to redact.
-    return value;
-  }
-}
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '0.0.0.0']);
 

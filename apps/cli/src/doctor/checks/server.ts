@@ -1,6 +1,7 @@
 import { OFFICIAL_AGENT_GATEWAY_URL } from '../../constants/urls';
 import { resolveAgentGatewayUrl } from '../../settings';
 import { probeClient, probeGlobalConfig, probeProviders } from '../probes';
+import { maskEmail } from '../redact';
 import type { CheckOutcome, DoctorCheck } from '../types';
 
 const errorMessage = (error: unknown): string =>
@@ -19,14 +20,14 @@ const identity: DoctorCheck = {
     try {
       const state = (await client.user.getUserState.query()) as Record<string, any>;
       const evidence = {
-        email: state.email,
+        email: maskEmail(state.email),
         plan: state.subscriptionPlan,
         userId: state.userId,
         username: state.username,
       };
 
       return {
-        detail: `Authenticated as ${state.username || state.email || state.userId}${state.subscriptionPlan ? ` (${state.subscriptionPlan})` : ''}.`,
+        detail: `Authenticated as ${state.username || maskEmail(state.email) || state.userId}${state.subscriptionPlan ? ` (${state.subscriptionPlan})` : ''}.`,
         evidence,
         status: 'ok',
       };

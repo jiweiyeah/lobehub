@@ -90,7 +90,7 @@ describe('execution.agent', () => {
     );
 
     expect(outcome.status).toBe('ok');
-    expect(outcome.detail).toContain('from the account');
+    expect(outcome.detail).toContain('key stored on the account');
   });
 
   it('fails a provider that is enabled but has an empty key vault', async () => {
@@ -98,7 +98,7 @@ describe('execution.agent', () => {
     // with no key is exactly what makes a run die with InvalidProviderAPIKey.
     state.providers = [{ enabled: true, id: 'lobehub' }];
     state.globalConfig = { serverConfig: { aiProvider: {} } };
-    state.providerDetail = { id: 'lobehub', keyVaults: { baseURL: 'https://example.com' } };
+    state.providerDetail = { id: 'lobehub', keyVaults: {} };
 
     const outcome = await runCheck(
       executionChecks,
@@ -110,7 +110,25 @@ describe('execution.agent', () => {
     expect(outcome.detail).toContain('no key stored');
   });
 
-  it('accepts a key that only the server environment holds', async () => {
+  it('does not fail a local runtime configured with only an endpoint', async () => {
+    // Ollama / LM Studio store a baseURL and no secret, and need none.
+    state.providers = [{ enabled: true, id: 'lobehub' }];
+    state.globalConfig = { serverConfig: { aiProvider: {} } };
+    state.providerDetail = { id: 'lobehub', keyVaults: { baseURL: 'http://127.0.0.1:1234/v1' } };
+
+    const outcome = await runCheck(
+      executionChecks,
+      'execution.agent',
+      makeContext({ agent: 'agt_known' }),
+    );
+
+    expect(outcome.status).toBe('warn');
+    expect(outcome.detail).toContain('endpoint and no key');
+  });
+
+  it('does not claim a key exists just because the server enables the provider', async () => {
+    // `deepseek` is enabled unconditionally server-side, and server keys are
+    // invisible to the CLI — so this may pass, but not as a key verification.
     state.providers = [];
     state.providerDetail = { id: 'lobehub', keyVaults: {} };
 
@@ -121,7 +139,8 @@ describe('execution.agent', () => {
     );
 
     expect(outcome.status).toBe('ok');
-    expect(outcome.detail).toContain('server environment');
+    expect(outcome.detail).toContain('reports as enabled');
+    expect(outcome.detail).not.toContain('with a key');
   });
 
   it('says so instead of passing when the key vault cannot be read', async () => {
@@ -222,13 +241,24 @@ describe('execution.round-trip', () => {
     expect(outcome.detail).toContain('waiting for human input');
   });
 
-  it('treats an untracked operation as finished', async () => {
-    state.statuses = [];
+  it('treats an untracked operation as finished only after seeing it run', async () => {
+    state.statuses = [{ currentState: { status: 'idle' }, isCompleted: false }];
 
     const outcome = await runCheck(executionChecks, 'execution.round-trip', deepContext());
 
     expect(outcome.status).toBe('ok');
     expect(outcome.detail).toContain('no longer tracked');
+  });
+
+  it('does not call a run that was never observed a success', async () => {
+    // The server also returns null when there is no state yet; passing on that
+    // would make this check incapable of failing.
+    state.statuses = [];
+
+    const outcome = await runCheck(executionChecks, 'execution.round-trip', deepContext());
+
+    expect(outcome.status).toBe('warn');
+    expect(outcome.detail).toContain('nothing was observed to run');
   });
 
   it('reports the server refusing to start the run', async () => {

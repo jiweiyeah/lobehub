@@ -5,6 +5,7 @@ import { getRunningDaemonPid, readStatus, removePid, removeStatus } from '../../
 import { readConnectServiceStatus } from '../../service/connect';
 import { resolveLocalDeviceId } from '../../utils/device';
 import { probeCredential, probeDevices } from '../probes';
+import { redactUrlCredentials, redactUrlsInMessage } from '../redact';
 import type { CheckOutcome, DoctorCheck } from '../types';
 import { resolveEndpoints } from './endpoints';
 
@@ -106,7 +107,9 @@ const gatewayHandshake: DoctorCheck = {
       };
 
     const { gatewayUrl } = resolveEndpoints();
-    const evidence = { gatewayUrl, tokenType: credential.tokenType };
+    // The URL is used verbatim to connect and redacted everywhere it is shown.
+    const shownUrl = redactUrlCredentials(gatewayUrl);
+    const evidence = { gatewayUrl: shownUrl, tokenType: credential.tokenType };
 
     const outcome = await new Promise<CheckOutcome>((resolve) => {
       const client = new GatewayClient({
@@ -127,7 +130,7 @@ const gatewayHandshake: DoctorCheck = {
       const timer = setTimeout(
         () =>
           settle({
-            detail: `${gatewayUrl} did not complete a handshake within ${ctx.options.timeoutMs}ms.`,
+            detail: `${shownUrl} did not complete a handshake within ${ctx.options.timeoutMs}ms.`,
             evidence,
             fix: 'Check egress to the gateway host (WebSocket upgrades are what proxies drop first).',
             status: 'fail',
@@ -135,12 +138,23 @@ const gatewayHandshake: DoctorCheck = {
         ctx.options.timeoutMs,
       );
 
+      // An EventEmitter throws on an unhandled `error`, and a socket failure
+      // (DNS, refused, TLS) arrives there — not through `connect()`'s promise.
+      // Without this listener a network problem crashes the whole report.
+      client.on('error', (error: Error) =>
+        settle({
+          detail: `Could not reach ${shownUrl}: ${redactUrlsInMessage(error.message)}.`,
+          evidence,
+          fix: 'Check the gateway URL and this machine’s egress.',
+          status: 'fail',
+        }),
+      );
       client.on('connected', () =>
-        settle({ detail: `Authenticated to ${gatewayUrl}.`, evidence, status: 'ok' }),
+        settle({ detail: `Authenticated to ${shownUrl}.`, evidence, status: 'ok' }),
       );
       client.on('auth_failed', (reason: string) =>
         settle({
-          detail: `${gatewayUrl} rejected the credential: ${reason}.`,
+          detail: `${shownUrl} rejected the credential: ${reason}.`,
           evidence,
           fix: 'The gateway and the server must trust the same issuer — check the gateway URL matches this server.',
           status: 'fail',
@@ -148,7 +162,7 @@ const gatewayHandshake: DoctorCheck = {
       );
       client.on('auth_expired', () =>
         settle({
-          detail: `${gatewayUrl} reports the credential expired.`,
+          detail: `${shownUrl} reports the credential expired.`,
           evidence,
           fix: `Run '${CLI_PRIMARY_BIN} login' again.`,
           status: 'fail',
@@ -156,7 +170,7 @@ const gatewayHandshake: DoctorCheck = {
       );
       client.on('disconnected', () =>
         settle({
-          detail: `${gatewayUrl} closed the connection before it was established.`,
+          detail: `${shownUrl} closed the connection before it was established.`,
           evidence,
           fix: 'Usually a gateway URL that belongs to a different deployment than the server.',
           status: 'fail',
@@ -165,7 +179,7 @@ const gatewayHandshake: DoctorCheck = {
 
       void client.connect().catch((error: unknown) =>
         settle({
-          detail: `Could not reach ${gatewayUrl}: ${error instanceof Error ? error.message : String(error)}.`,
+          detail: `Could not reach ${shownUrl}: ${redactUrlsInMessage(error instanceof Error ? error.message : String(error))}.`,
           evidence,
           fix: 'Check the gateway URL and this machine’s egress.',
           status: 'fail',

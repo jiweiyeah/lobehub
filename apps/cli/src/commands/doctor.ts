@@ -71,9 +71,9 @@ export function registerDoctorCommand(program: Command) {
         console.log(renderReport(report, { verbose: options.verbose }));
       }
 
-      const code = exitCodeFor(report, doctorOptions.strict);
-      // A clean run must not exit(0) explicitly: pending stdout writes would be
-      // truncated. Only a failure needs the non-zero code.
-      if (code !== 0) process.exit(code);
+      // `process.exit()` does not wait for stdout to drain, and a piped report
+      // is well past the pipe buffer — the JSON would be cut mid-object. Set
+      // the code and let the process end when its output has actually left.
+      process.exitCode = exitCodeFor(report, doctorOptions.strict);
     });
 }
