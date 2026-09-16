@@ -17,13 +17,17 @@ const configDir = (): string => path.join(os.homedir(), resolveCliDirName());
 const bytesToGb = (bytes: number): string => `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 
 /**
- * The single most expensive failure this command exists to prevent.
+ * The runtime the CLI is actually running on.
  *
- * `@lobehub/cli` imports `zstdDecompress` from `node:zlib`, which only exists
- * from node 22.15. On an older runtime the CLI dies at import time with
- * "no export named 'zstdDecompress'" — a message that points at the CLI rather
- * than at the node it is running on, and has cost whole afternoons in eval
- * containers whose base images ship node 18.
+ * Known gap: this cannot fire for the case it most wants to catch. The bundle
+ * imports `zstdDecompress` from `node:zlib` (node >= 22.15) and ESM resolves
+ * every import before the first line runs, so on an older runtime `lh` dies
+ * with "no export named 'zstdDecompress'" — pointing at node:zlib rather than
+ * at the node it is running on — and no in-process check is ever reached.
+ * Closing that needs a change to how the CLI is launched, which belongs in its
+ * own change rather than riding along with a diagnostic command. Until then
+ * this check covers the case where the bundle loads but the runtime is still
+ * below the floor.
  */
 const nodeVersion: DoctorCheck = {
   group: 'runtime',
