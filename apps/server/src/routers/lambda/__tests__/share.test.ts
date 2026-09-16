@@ -43,6 +43,18 @@ vi.mock('@/database/models/aiModel', () => ({
   },
 }));
 
+const resolveModelSelectionMock = vi.hoisted(() => vi.fn());
+const agentServiceConstructor = vi.hoisted(() => vi.fn());
+
+vi.mock('@/server/services/agent', () => ({
+  AgentService: class {
+    constructor(...args: unknown[]) {
+      agentServiceConstructor(...args);
+    }
+    resolveModelSelection = resolveModelSelectionMock;
+  },
+}));
+
 vi.mock('@/database/models/topicShare', () => ({
   TopicShareModel: {
     findByShareIdWithAccessCheck: vi.fn(),
@@ -137,6 +149,7 @@ describe('shareRouter', () => {
         },
       ]);
       findByIdAndProviderMock.mockResolvedValue(undefined);
+      resolveModelSelectionMock.mockResolvedValue({ model: 'gpt-4o', provider: 'openai' });
     });
 
     it('requires authentication without resolving or counting the share', async () => {
@@ -212,6 +225,11 @@ describe('shareRouter', () => {
       it('looks the model up as the OWNER, whose overrides the run itself honours', async () => {
         await resolve();
 
+        expect(agentServiceConstructor).toHaveBeenCalledWith(expect.anything(), 'owner-user');
+        expect(resolveModelSelectionMock).toHaveBeenCalledWith({
+          model: 'gpt-4o',
+          provider: 'openai',
+        });
         expect(aiModelModelConstructor).toHaveBeenCalledWith(expect.anything(), 'owner-user');
         expect(findByIdAndProviderMock).toHaveBeenCalledWith('gpt-4o', 'openai');
       });
@@ -224,19 +242,43 @@ describe('shareRouter', () => {
         await expect(resolve()).resolves.toEqual({ audio: true, image: false, video: true });
       });
 
-      it('falls back to the default model when the agent has none configured', async () => {
+      it("gates on the OWNER's effective model when the agent has none configured", async () => {
+        // The run merges the owner's default agent config over the global
+        // default, so an agent with no model of its own answers with the
+        // owner's default model — the gate must look at that one, not at the
+        // global constant.
         vi.mocked(AgentShareModel.findBySlugOrId).mockResolvedValue({
           ...agentShare,
           agentModel: null,
           agentProvider: null,
         } as any);
+        resolveModelSelectionMock.mockResolvedValue({
+          model: 'claude-sonnet-4',
+          provider: 'anthropic',
+        });
+        loadModelsMock.mockResolvedValue([
+          {
+            abilities: { audio: false, video: false, vision: true },
+            id: 'gpt-4o',
+            providerId: 'openai',
+          },
+          {
+            abilities: { audio: true, video: false, vision: false },
+            id: 'claude-sonnet-4',
+            providerId: 'anthropic',
+          },
+        ]);
 
-        await resolve();
+        await expect(resolve()).resolves.toEqual({ audio: true, image: false, video: false });
+        expect(resolveModelSelectionMock).toHaveBeenCalledWith({ model: null, provider: null });
+        expect(findByIdAndProviderMock).toHaveBeenCalledWith('claude-sonnet-4', 'anthropic');
+      });
 
-        const [model, provider] = findByIdAndProviderMock.mock.calls[0];
-        expect(typeof model).toBe('string');
-        expect(typeof provider).toBe('string');
-        expect(model).not.toBe('gpt-4o');
+      it('fails closed when the effective model cannot be resolved', async () => {
+        resolveModelSelectionMock.mockRejectedValue(new Error('settings unavailable'));
+
+        await expect(resolve()).resolves.toEqual({ audio: false, image: false, video: false });
+        expect(findByIdAndProviderMock).not.toHaveBeenCalled();
       });
 
       it('fails closed (no media) when the capability lookup throws', async () => {

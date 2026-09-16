@@ -1,9 +1,7 @@
-import { DEFAULT_PROVIDER } from '@lobechat/business-const';
 import {
   AGENT_SHARE_DEFAULT_MAX_FILE_STORAGE,
   AGENT_SHARE_DEFAULT_MAX_TOPICS_PER_VISITOR,
   AGENT_SHARE_DEFAULT_MAX_TURNS_PER_TOPIC,
-  DEFAULT_MODEL,
 } from '@lobechat/const';
 import {
   type SharedAgentData,
@@ -23,6 +21,7 @@ import type { LobeChatDatabase } from '@/database/type';
 import { authedProcedure, publicProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { resolveModelMediaCapabilities } from '@/server/modules/AgentRuntime/resolveModelMediaCapabilities';
+import { AgentService } from '@/server/services/agent';
 
 import { assertAgentShareVisitorEnabled } from './_helpers/agentShareFeatureGate';
 
@@ -37,6 +36,11 @@ const log = debug('lobe-server:router:share');
  * one the run can actually feed to the model. Resolved as the owner because
  * the run executes as them; the visitor's own provider setup is irrelevant.
  *
+ * The model itself is resolved the way the run resolves it
+ * (`AgentService.resolveModelSelection`): an agent with no model of its own
+ * runs on the OWNER's default agent config, not on the global default, so
+ * the gate has to look at that model too.
+ *
  * Fails closed on lookup errors: media silently dropped server-side is worse
  * than a composer that refuses it with a reason. Documents never go through
  * this gate.
@@ -45,15 +49,19 @@ const resolveVisitorUploadAbility = async (
   db: LobeChatDatabase,
   share: { agentModel: string | null; agentProvider: string | null; ownerId: string },
 ): Promise<SharedAgentUploadAbility> => {
-  const model = share.agentModel || DEFAULT_MODEL;
-  const provider = share.agentProvider || DEFAULT_PROVIDER;
-
   try {
     const { loadModels } = await import('@/business/client/model-bank/loadModels');
-    const [builtinModels, ownerModel] = await Promise.all([
+    const [builtinModels, { model, provider }] = await Promise.all([
       loadModels(),
-      new AiModelModel(db, share.ownerId).findByIdAndProvider(model, provider),
+      new AgentService(db, share.ownerId).resolveModelSelection({
+        model: share.agentModel,
+        provider: share.agentProvider,
+      }),
     ]);
+    const ownerModel = await new AiModelModel(db, share.ownerId).findByIdAndProvider(
+      model,
+      provider,
+    );
     const abilities = resolveModelMediaCapabilities({
       builtinModels,
       model,
@@ -67,7 +75,13 @@ const resolveVisitorUploadAbility = async (
       video: abilities?.video === true,
     };
   } catch (error) {
-    log('failed to resolve upload ability for %s/%s: %O', provider, model, error);
+    log(
+      'failed to resolve upload ability for %s/%s (owner %s): %O',
+      share.agentProvider,
+      share.agentModel,
+      share.ownerId,
+      error,
+    );
     return { audio: false, image: false, video: false };
   }
 };

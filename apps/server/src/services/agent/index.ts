@@ -181,6 +181,27 @@ export class AgentService {
   }
 
   /**
+   * The model and provider a run of this agent actually uses: the same
+   * `DEFAULT_AGENT_CONFIG` → server default → user default → agent layering
+   * as {@link getAgentConfig}, narrowed to those two fields. For read paths
+   * that only need to know which model will answer (deriving what media a
+   * share visitor may attach, for instance) without loading the agent's
+   * knowledge and documents.
+   */
+  async resolveModelSelection(agent: {
+    model?: string | null;
+    provider?: string | null;
+  }): Promise<{ model: string; provider: string }> {
+    const defaultAgentConfig = await this.userModel.getUserSettingsDefaultAgentConfig();
+    const merged = this.mergeDefaultConfig(
+      { model: agent.model, provider: agent.provider },
+      defaultAgentConfig,
+    )!;
+
+    return { model: merged.model, provider: merged.provider };
+  }
+
+  /**
    * Get AI-generated welcome data from Redis
    * Returns null if Redis is disabled or data doesn't exist
    */
