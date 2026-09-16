@@ -1,10 +1,13 @@
 import type {
   ExpertiseAnchorCandidate,
+  ExpertiseBacktestResult,
   ExpertiseCanonEntry,
   ExpertiseEvidenceSpecItem,
   ExpertiseInsightEvidenceRef,
   ExpertiseLayerDefinition,
   ExpertiseLessonSection,
+  ExpertiseReasonKind,
+  ExpertiseReasonSource,
 } from '@lobechat/types';
 import { isNotNull, isNull, sql } from 'drizzle-orm';
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
@@ -32,7 +35,7 @@ import { agentOperations } from './agentOperations';
 import { documents } from './file';
 import { projects } from './project';
 import { users } from './user';
-import { verifyCriteria, verifyEvidence } from './verify';
+import { verifyCheckResults, verifyCriteria, verifyEvidence } from './verify';
 import { workspaces } from './workspace';
 
 /**
@@ -62,7 +65,12 @@ export const EXPERTISE_LESSON_POLARITIES = ['bad', 'good', 'rule'] as const;
 export const EXPERTISE_LESSON_STATUSES = ['active', 'rejected', 'retired'] as const;
 export const EXPERTISE_COMPILABILITIES = ['compiled', 'compilable', 'not-compilable'] as const;
 export const EXPERTISE_ACTOR_TYPES = ['agent', 'user', 'system'] as const;
-export const EXPERTISE_SUBJECT_TYPES = ['topic', 'task', 'document'] as const;
+/**
+ * Mirrors `acceptanceSubjectTypes`: a practice run records the object it judged, and an
+ * acceptance-driven run inherits that acceptance's own subject rather than inventing one.
+ * `standalone` exists because 36 of this owner's 193 acceptances carry no in-product subject.
+ */
+export const EXPERTISE_SUBJECT_TYPES = ['topic', 'task', 'document', 'standalone'] as const;
 /**
  * 只有两值。早期有第三值 false_positive，实测被系统性误用：模型把「这条规则在
  * 这个 topic 不适用」记成了 fp（消息回复 fp 29 > pass 19）。但 fp 的本意是
@@ -312,6 +320,18 @@ export const expertiseLessons = pgTable(
 
     layer: varchar255('layer'),
     tags: text('tags').array(),
+
+    /**
+     * 这条判据底下是机制还是口味，以及理由是属主给的还是沉淀时补的。
+     *
+     * 必须是列而不是正文里的一句话：编译步骤要靠 reasonKind 挡住「把口味编译成能单独拦交付的
+     * criterion」，而正文那句标注是**跟着评审者的语言写的**，靠字符串匹配必漏。
+     *
+     * 定在 lesson 诞生那一刻。以后某次打回给出了机制，理论上该把 taste 升级成 mechanism，
+     * 但升级规则还没想清楚，先不做。
+     */
+    reasonKind: text('reason_kind').$type<ExpertiseReasonKind>(),
+    reasonSource: text('reason_source').$type<ExpertiseReasonSource>(),
     /** 锚不上经典（null）是弱信号 —— 按 BM-58 多半意味着还没想透，不是错误。 */
     canonAnchor: text('canon_anchor'),
 
@@ -332,6 +352,14 @@ export const expertiseLessons = pgTable(
     compilability: text('compilability', { enum: EXPERTISE_COMPILABILITIES })
       .notNull()
       .default('compilable'),
+    /**
+     * 编译前的体检：把这条心得拿去判属主**过去**判过的交付，看它开火时属主是不是真的打回了。
+     *
+     * 只有它能回答「编译上线会不会拦掉他本来会通过的东西」，而那是唯一会让人关掉整个功能的
+     * 失败方式。jsonb 而不是几个具名列：指标还会变（先到先得的 precision/fired，以后可能加
+     * 分层口径），而每加一个口径都开一次迁移不划算。null = 还没测过。
+     */
+    backtest: jsonb('backtest').$type<ExpertiseBacktestResult>(),
     compiledCriterionId: uuid('compiled_criterion_id').references(() => verifyCriteria.id, {
       onDelete: 'set null',
     }),
@@ -530,6 +558,16 @@ export const expertiseHits = pgTable(
     /** 证据接 verify_evidence，不退化成一句话。 */
     evidenceId: uuid('evidence_id').references(() => verifyEvidence.id, { onDelete: 'set null' }),
     operationId: text('operation_id').references(() => agentOperations.id, {
+      onDelete: 'set null',
+    }),
+    /**
+     * 打回沉淀出来的命中，指回教会我们这条的那一次打回。
+     *
+     * 没有它，「这条判据源自哪几次验收」就只能靠 evidenceId 反推，而打回不一定圈了证据
+     * （876 次打回里 260 次没有圈选）。set null 是因为它是溯源而非归属：删掉一次验收
+     * 不该连带删掉从它学到的规则。
+     */
+    sourceCheckResultId: uuid('source_check_result_id').references(() => verifyCheckResults.id, {
       onDelete: 'set null',
     }),
 

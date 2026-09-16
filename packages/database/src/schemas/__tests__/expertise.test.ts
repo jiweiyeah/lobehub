@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../core/getTestDB';
@@ -9,6 +10,7 @@ import {
   expertiseLessons,
   expertiseRuns,
   users,
+  verifyCheckResults,
 } from '..';
 
 const serverDB = await getTestDB();
@@ -118,6 +120,37 @@ describe('expertise domain constraints', () => {
         runId: runB.id,
       }),
     ).rejects.toThrow();
+  });
+
+  it('keeps a hit after the rejection it was learned from is deleted', async () => {
+    const { domainB, lessonB, runB } = await createFixture();
+
+    const [checkResult] = await serverDB
+      .insert(verifyCheckResults)
+      .values({ checkItemId: 'check-item-1', userId, verifierType: 'agent' })
+      .returning();
+
+    const [hit] = await serverDB
+      .insert(expertiseHits)
+      .values({
+        domainId: domainB.id,
+        lessonId: lessonB.id,
+        outcome: 'violation',
+        runId: runB.id,
+        sourceCheckResultId: checkResult.id,
+      })
+      .returning();
+
+    await serverDB.delete(verifyCheckResults).where(eq(verifyCheckResults.id, checkResult.id));
+
+    // Provenance, not ownership: deleting an acceptance must not delete what it taught.
+    const [survivor] = await serverDB
+      .select()
+      .from(expertiseHits)
+      .where(eq(expertiseHits.id, hit.id));
+
+    expect(survivor).toBeDefined();
+    expect(survivor.sourceCheckResultId).toBeNull();
   });
 
   it('rejects snapshots whose run belongs to another domain', async () => {
