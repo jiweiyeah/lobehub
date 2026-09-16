@@ -53,5 +53,11 @@ export function maskEmail(value: string | undefined): string | undefined {
  * is worth reporting; that query string is not.
  */
 export function redactUrlsInMessage(message: string): string {
-  return message.replaceAll(/(wss?:\/\/[^\s'"]+?)\?[^\s'"]*/g, '$1');
+  // Tokenise first, then decide per token. A single pattern that matches the
+  // URL and then *requires* a `?` backtracks across the rest of the string at
+  // every starting position — quadratic, and what CodeQL flags as a ReDoS.
+  // `[^\s'"]+` has nothing following it to backtrack for.
+  return message.replaceAll(/[^\s'"]+/g, (token) =>
+    /^wss?:\/\//i.test(token) ? token.split('?')[0]! : token,
+  );
 }

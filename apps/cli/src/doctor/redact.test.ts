@@ -41,4 +41,13 @@ describe('redactUrlsInMessage', () => {
     expect(redacted).toBe("WebSocket connection to 'ws://127.0.0.1:9/ws' failed");
     expect(redacted).not.toContain('user_1');
   });
+
+  it('stays linear on input built to make it backtrack', () => {
+    const hostile = `${'ws://'.repeat(20_000)}x`;
+
+    const startedAt = Date.now();
+    redactUrlsInMessage(hostile);
+
+    expect(Date.now() - startedAt).toBeLessThan(1000);
+  });
 });
