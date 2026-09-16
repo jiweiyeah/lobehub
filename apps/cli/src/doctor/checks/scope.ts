@@ -1,5 +1,6 @@
 import { resolveIdentityFingerprint } from '../../auth/identity';
 import { loadActiveWorkspace, resolveServerUrl, saveActiveWorkspace } from '../../settings';
+import { redactUrlCredentials } from '../redact';
 import type { CheckOutcome, DoctorCheck } from '../types';
 
 /**
@@ -32,7 +33,9 @@ const workspaceScope: DoctorCheck = {
     const serverUrl = resolveServerUrl();
     const evidence: Record<string, unknown> = {
       envWorkspaceId: fromEnv,
-      serverUrl,
+      // Redacted like every other URL that reaches the report: a self-hosted
+      // server behind basic auth carries its credential in the URL itself.
+      serverUrl: redactUrlCredentials(serverUrl),
       storedWorkspaceId: stored?.workspaceId,
     };
 
@@ -78,7 +81,7 @@ const workspaceScope: DoctorCheck = {
       identity !== stored.identity
         ? 'it was saved under a different account'
         : stored.serverUrl !== serverUrl
-          ? `it was saved for ${stored.serverUrl}`
+          ? `it was saved for ${redactUrlCredentials(stored.serverUrl)}`
           : undefined;
 
     if (reason)
