@@ -36,12 +36,14 @@ describe('endpoints.resolution', () => {
     });
   });
 
-  it('fails a self-hosted server still pointed at the official device gateway', async () => {
+  it('warns — never fails — about a self-hosted server on the official device gateway', async () => {
     process.env.LOBEHUB_SERVER = 'https://lobe.internal';
 
     const outcome = await runCheck(endpointChecks, 'endpoints.resolution');
 
-    expect(outcome.status).toBe('fail');
+    // A failure here would skip every server-side check through the dependency
+    // chain, leaving an API-only installation undiagnosable.
+    expect(outcome.status).toBe('warn');
     expect(outcome.detail).toContain('device gateway is still the official');
   });
 
@@ -87,6 +89,17 @@ describe('endpoints.tls', () => {
 
     expect(outcome.status).toBe('ok');
     expect(outcome.detail).toContain('proxy via HTTPS_PROXY');
+  });
+
+  it('strips the credentials out of an authenticated proxy URL', async () => {
+    process.env.HTTPS_PROXY = 'http://alice:hunter2@proxy.internal:3128';
+
+    const outcome = await runCheck(endpointChecks, 'endpoints.tls');
+    const serialized = JSON.stringify(outcome.evidence);
+
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).not.toContain('alice');
+    expect(serialized).toContain('proxy.internal:3128');
   });
 });
 

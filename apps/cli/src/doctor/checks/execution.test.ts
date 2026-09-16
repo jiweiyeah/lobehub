@@ -7,6 +7,8 @@ const state = vi.hoisted(() => ({
   agentConfig: {} as any,
   builtinAgent: null as any,
   globalConfig: {} as any,
+  providerDetail: undefined as any,
+  providerDetailThrows: false,
   providers: [] as any[],
   started: {} as any,
   statuses: [] as any[],
@@ -32,6 +34,14 @@ vi.mock('../probes', () => ({
       execAgent: { mutate: async () => state.started },
       getOperationStatus: { query: async () => state.statuses.shift() ?? null },
     },
+    aiProvider: {
+      getAiProviderById: {
+        query: async () => {
+          if (state.providerDetailThrows) throw new Error('nope');
+          return state.providerDetail;
+        },
+      },
+    },
   }),
   probeGlobalConfig: async () => state.globalConfig,
   probeProviders: async () => state.providers,
@@ -45,6 +55,8 @@ describe('execution.agent', () => {
     state.builtinAgent = null;
     state.globalConfig = { serverConfig: { aiProvider: { lobehub: { enabled: true } } } };
     state.providers = [];
+    state.providerDetail = { id: 'lobehub', keyVaults: { apiKey: 'stored-key' } };
+    state.providerDetailThrows = false;
   });
 
   it('skips itself when no agent was named', async () => {
@@ -54,7 +66,7 @@ describe('execution.agent', () => {
     expect(outcome.skippedBecause).toBe('--agent');
   });
 
-  it('names the env var to set when the agent’s provider has no credential', async () => {
+  it('names the env var to set when the agent’s provider is not enabled anywhere', async () => {
     state.agentConfig = { model: 'kimi-k3', provider: 'fireworksai' };
 
     const outcome = await runCheck(
@@ -67,7 +79,10 @@ describe('execution.agent', () => {
     expect(outcome.fix).toContain('FIREWORKSAI_API_KEY');
   });
 
-  it('passes when the provider is usable', async () => {
+  it('passes when the provider has a key on the account', async () => {
+    state.providers = [{ enabled: true, id: 'lobehub' }];
+    state.globalConfig = { serverConfig: { aiProvider: {} } };
+
     const outcome = await runCheck(
       executionChecks,
       'execution.agent',
@@ -75,7 +90,54 @@ describe('execution.agent', () => {
     );
 
     expect(outcome.status).toBe('ok');
-    expect(outcome.detail).toContain('usable credential');
+    expect(outcome.detail).toContain('from the account');
+  });
+
+  it('fails a provider that is enabled but has an empty key vault', async () => {
+    // `getAiProviderList` reports the toggle, not the key — enabling a provider
+    // with no key is exactly what makes a run die with InvalidProviderAPIKey.
+    state.providers = [{ enabled: true, id: 'lobehub' }];
+    state.globalConfig = { serverConfig: { aiProvider: {} } };
+    state.providerDetail = { id: 'lobehub', keyVaults: { baseURL: 'https://example.com' } };
+
+    const outcome = await runCheck(
+      executionChecks,
+      'execution.agent',
+      makeContext({ agent: 'agt_known' }),
+    );
+
+    expect(outcome.status).toBe('fail');
+    expect(outcome.detail).toContain('no key stored');
+  });
+
+  it('accepts a key that only the server environment holds', async () => {
+    state.providers = [];
+    state.providerDetail = { id: 'lobehub', keyVaults: {} };
+
+    const outcome = await runCheck(
+      executionChecks,
+      'execution.agent',
+      makeContext({ agent: 'agt_known' }),
+    );
+
+    expect(outcome.status).toBe('ok');
+    expect(outcome.detail).toContain('server environment');
+  });
+
+  it('says so instead of passing when the key vault cannot be read', async () => {
+    // A restricted API key gets the provider back without its `keyVaults`.
+    state.providers = [{ enabled: true, id: 'lobehub' }];
+    state.globalConfig = { serverConfig: { aiProvider: {} } };
+    state.providerDetail = { id: 'lobehub' };
+
+    const outcome = await runCheck(
+      executionChecks,
+      'execution.agent',
+      makeContext({ agent: 'agt_known' }),
+    );
+
+    expect(outcome.status).toBe('warn');
+    expect(outcome.detail).toContain('not verified');
   });
 
   it('falls back to a slug lookup when the value is not an id', async () => {

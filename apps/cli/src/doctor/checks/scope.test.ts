@@ -64,14 +64,14 @@ describe('scope.workspace', () => {
       serverUrl: 'https://app.lobehub.com',
       workspaceId: 'ws_1',
     };
+    const outcome = await runCheck(scopeChecks, 'scope.workspace');
     const check = findCheck(scopeChecks, 'scope.workspace');
 
     const action = await check.repair!(makeContext({ fix: true }), {
-      detail: '',
+      ...outcome,
       durationMs: 0,
       group: 'scope',
       id: 'scope.workspace',
-      status: 'fail',
       title: '',
     });
 

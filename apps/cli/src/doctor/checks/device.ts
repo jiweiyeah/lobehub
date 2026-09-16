@@ -16,7 +16,14 @@ const daemon: DoctorCheck = {
   group: 'device',
   id: 'device.daemon',
   profiles: ['connect'],
-  repair: () => {
+  repair: (_ctx, result) => {
+    // Only the leftover-files case is repairable. A daemon that is merely
+    // reconnecting is still a live process: deleting its pid file would orphan
+    // it where `connect stop` can never find it, and the next `connect` would
+    // start a second one alongside it.
+    if (result.evidence?.repairable !== 'stale-files')
+      throw new Error('the daemon process is still running, so its pid file is not stale');
+
     removePid();
     removeStatus();
     return 'removed the stale daemon pid/status files';
@@ -39,7 +46,7 @@ const daemon: DoctorCheck = {
       if (status)
         return {
           detail: 'A daemon status file is left over, but no daemon is running.',
-          evidence,
+          evidence: { ...evidence, repairable: 'stale-files' },
           fix: `Run '${CLI_PRIMARY_BIN} connect --daemon', or re-run with --fix to clear the leftovers.`,
           status: 'warn',
         };

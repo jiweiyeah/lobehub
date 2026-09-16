@@ -65,14 +65,20 @@ const endpointResolution: DoctorCheck = {
     const selfHosted = endpoints.serverUrl !== OFFICIAL_SERVER_URL;
 
     // A self-hosted server with the official device gateway is the trap: only
-    // `lh status` complains today, while every other command connects to a
-    // gateway that has never heard of that server.
+    // `lh status` complains today, while every other device command connects to
+    // a gateway that has never heard of that server.
+    //
+    // A warning, not a failure: an installation that only uses the HTTP API
+    // never needs a device gateway, and failing here would skip every check
+    // below through the dependency chain — leaving doctor unable to say
+    // anything at all about an otherwise healthy server. The device profile's
+    // own handshake check is what fails concretely when it matters.
     if (selfHosted && endpoints.gatewaySource === 'built-in default')
       return {
-        detail: `Server is ${endpoints.serverUrl} but the device gateway is still the official ${OFFICIAL_GATEWAY_URL}.`,
+        detail: `Server is ${endpoints.serverUrl} but the device gateway is still the official ${OFFICIAL_GATEWAY_URL}, which has never heard of that server.`,
         evidence,
-        fix: "Pass --gateway <url> to 'lh connect' (it is persisted), or unset the custom server.",
-        status: 'fail',
+        fix: "Only matters for device commands: pass --gateway <url> to 'lh connect' (it is persisted).",
+        status: 'warn',
       };
 
     // A gateway that only exists on this machine cannot be dispatched to by a
@@ -118,7 +124,13 @@ const tlsAndProxy: DoctorCheck = {
     const caFile = process.env.NODE_EXTRA_CA_CERTS;
     const proxies = Object.fromEntries(
       (['HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY'] as const)
-        .map((name) => [name, process.env[name] ?? process.env[name.toLowerCase()]] as const)
+        .map(
+          (name) =>
+            [
+              name,
+              redactUrlCredentials(process.env[name] ?? process.env[name.toLowerCase()]),
+            ] as const,
+        )
         .filter(([, value]) => Boolean(value)),
     );
     const evidence = { caFile, proxies };
@@ -196,6 +208,26 @@ const serverReachable: DoctorCheck = {
   },
   title: 'server reachable',
 };
+
+/**
+ * `http://user:password@proxy:8080` is a normal way to configure a corporate
+ * proxy, and the whole report — evidence included — is meant to be pasted into
+ * an issue. Keep the host, drop the credential.
+ */
+function redactUrlCredentials(value: string | undefined): string | undefined {
+  if (!value) return value;
+
+  try {
+    const url = new URL(value);
+    if (!url.username && !url.password) return value;
+    if (url.username) url.username = '***';
+    if (url.password) url.password = '***';
+    return url.toString();
+  } catch {
+    // Not a URL (NO_PROXY is a host list) — nothing to redact.
+    return value;
+  }
+}
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1', '0.0.0.0']);
 

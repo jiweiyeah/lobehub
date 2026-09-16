@@ -152,7 +152,16 @@ export async function runDoctor(
 
     let result = await execute(check);
 
-    if (options.fix && check.repair && (result.status === 'fail' || result.status === 'warn')) {
+    // `evidence.repairable` is the check's own statement that this finding is
+    // actionable. Without it, a warning like "no daemon is running" would
+    // otherwise invoke a repair that has nothing to undo.
+    const repairable =
+      options.fix &&
+      check.repair &&
+      (result.status === 'fail' || result.status === 'warn') &&
+      Boolean(result.evidence?.repairable);
+
+    if (repairable) {
       try {
         const action = await check.repair(ctx, result);
         repairs.push({ action, id: check.id, ok: true });

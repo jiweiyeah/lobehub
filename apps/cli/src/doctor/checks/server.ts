@@ -134,24 +134,27 @@ const providers: DoctorCheck = {
       string,
       { enabled?: boolean }
     >;
-    const usable = usableProviders(userProviders, serverProviders);
+    const enabled = enabledProviders(userProviders, serverProviders);
     const evidence = {
+      enabled,
       fromServerEnv: Object.entries(serverProviders)
         .filter(([, value]) => value?.enabled)
         .map(([id]) => id),
-      usable,
     };
 
-    if (usable.length === 0)
+    if (enabled.length === 0)
       return {
-        detail: 'No provider is usable: none has a key of its own and none is enabled server-side.',
+        detail: 'No provider is enabled, on the account or on the server.',
         evidence,
         fix: "Add a key with 'lh provider' in the app, or set <PROVIDER>_API_KEY on the server.",
         status: 'fail',
       };
 
+    // Enablement is not the same as having a key — a provider can be toggled on
+    // with an empty key vault. Whether a specific one can actually be called is
+    // answered per agent by `execution.agent`.
     return {
-      detail: `${usable.length} usable provider(s): ${usable.slice(0, 6).join(', ')}${usable.length > 6 ? '…' : ''}.`,
+      detail: `${enabled.length} enabled provider(s): ${enabled.slice(0, 6).join(', ')}${enabled.length > 6 ? '…' : ''}.`,
       evidence,
       status: 'ok',
     };
@@ -159,8 +162,13 @@ const providers: DoctorCheck = {
   title: 'model providers',
 };
 
-/** Providers with a user/workspace key, plus those the server enables from env. */
-export function usableProviders(
+/**
+ * Providers enabled on the account, plus those the server enables from its env.
+ *
+ * Enabled is all this can honestly claim: `getAiProviderList` reports the
+ * toggle, and a provider can be switched on with no key stored at all.
+ */
+export function enabledProviders(
   userProviders: any[],
   serverProviders: Record<string, { enabled?: boolean }>,
 ): string[] {

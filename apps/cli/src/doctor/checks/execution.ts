@@ -7,7 +7,7 @@ import {
 import { CLI_PRIMARY_BIN } from '../../constants/identity';
 import { probeClient, probeGlobalConfig, probeProviders } from '../probes';
 import type { CheckOutcome, DoctorCheck } from '../types';
-import { usableProviders } from './server';
+import { enabledProviders } from './server';
 
 /** External CLI agents worth probing unless the caller names others. */
 const DEFAULT_HETERO_TYPES: HeterogeneousCliAgentType[] = ['claude-code', 'codex'];
@@ -66,21 +66,50 @@ const agentReadiness: DoctorCheck = {
       string,
       { enabled?: boolean }
     >;
-    const usable = usableProviders(userProviders, serverProviders);
+    const enabled = enabledProviders(userProviders, serverProviders);
 
-    if (!usable.includes(provider))
+    // The env var name is the part people get wrong: the server upper-cases the
+    // provider's internal id, not its display name.
+    const addKey = `Add a key for "${provider}" on the account, or set ${provider.toUpperCase()}_API_KEY on the server.`;
+
+    if (!enabled.includes(provider))
       return {
-        detail: `Agent ${agentId} runs ${model} on "${provider}", which has no usable credential.`,
-        evidence: { ...evidence, usable },
-        // The env var name is the part people get wrong: the provider's
-        // internal id is what the server upper-cases, not its display name.
-        fix: `Add a key for "${provider}" on the account, or set ${provider.toUpperCase()}_API_KEY on the server.`,
+        detail: `Agent ${agentId} runs ${model} on "${provider}", which is not enabled anywhere.`,
+        evidence: { ...evidence, enabled },
+        fix: addKey,
         status: 'fail',
       };
 
+    // Enabled is not the same as callable: a provider can be toggled on with an
+    // empty key vault, and the run then dies with InvalidProviderAPIKey — the
+    // exact failure this check exists to pre-empt. So read the key vault of
+    // this one provider rather than trusting the toggle.
+    const credential = await readProviderCredential(
+      client,
+      provider,
+      Boolean(serverProviders[provider]?.enabled),
+    );
+    const withCredential = { ...evidence, credentialSource: credential.source };
+
+    if (credential.source === 'none')
+      return {
+        detail: `Agent ${agentId} runs ${model} on "${provider}", which is enabled but has no key stored.`,
+        evidence: withCredential,
+        fix: addKey,
+        status: 'fail',
+      };
+
+    if (credential.source === 'unknown')
+      return {
+        detail: `Agent ${agentId} runs ${model} on ${provider}, which is enabled — but this credential cannot read key vaults, so the key itself was not verified.`,
+        evidence: withCredential,
+        fix: 'Re-run with a full-access login to confirm the provider key.',
+        status: 'warn',
+      };
+
     return {
-      detail: `Agent ${agentId} runs ${model} on ${provider}, which has a usable credential.`,
-      evidence,
+      detail: `Agent ${agentId} runs ${model} on ${provider}, with a key from ${credential.source === 'server' ? 'the server environment' : 'the account'}.`,
+      evidence: withCredential,
       status: 'ok',
     };
   },
@@ -109,6 +138,45 @@ async function resolveAgent(client: any, requested: string): Promise<ResolvedAge
 
   const config = await readAgentConfig(client, agentId);
   return config ? { agentId, config } : undefined;
+}
+
+/** Key-vault fields that are addresses rather than credentials. */
+const NON_SECRET_VAULT_FIELDS = new Set(['baseURL', 'endpoint', 'apiVersion']);
+
+/**
+ * Where the credential for one provider comes from, without ever reading its
+ * value into the report.
+ *
+ * `getAiProviderById` returns the decrypted key vault for a full-access
+ * caller and omits it entirely for a restricted API key — which is why
+ * "unknown" is a distinct answer from "none".
+ */
+async function readProviderCredential(
+  client: any,
+  provider: string,
+  enabledOnServer: boolean,
+): Promise<{ source: 'account' | 'server' | 'none' | 'unknown' }> {
+  let detail: Record<string, any> | undefined;
+  try {
+    detail = (await client.aiProvider.getAiProviderById.query({ id: provider })) ?? undefined;
+  } catch {
+    return { source: enabledOnServer ? 'server' : 'unknown' };
+  }
+
+  const vault = (detail?.keyVaults ?? undefined) as Record<string, unknown> | undefined;
+  if (vault) {
+    const hasSecret = Object.entries(vault).some(
+      ([key, value]) =>
+        !NON_SECRET_VAULT_FIELDS.has(key) && typeof value === 'string' && value.length > 0,
+    );
+    if (hasSecret) return { source: 'account' };
+  }
+
+  if (enabledOnServer) return { source: 'server' };
+
+  // A full-access caller that saw an empty vault knows there is no key; a
+  // restricted one cannot tell the two apart.
+  return { source: vault ? 'none' : 'unknown' };
 }
 
 async function readAgentConfig(

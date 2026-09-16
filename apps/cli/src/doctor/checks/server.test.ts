@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { runCheck } from '../testUtils';
-import { serverChecks, usableProviders } from './server';
+import { enabledProviders, serverChecks } from './server';
 
 const state = vi.hoisted(() => ({
   agentGatewayUrl: 'wss://agent-gateway.lobehub.com',
@@ -31,10 +31,10 @@ vi.mock('../probes', () => ({
   probeProviders: async () => state.providers,
 }));
 
-describe('usableProviders', () => {
-  it('unions account-level keys with providers the server enables from env', () => {
+describe('enabledProviders', () => {
+  it('unions account-enabled providers with the ones the server enables from env', () => {
     expect(
-      usableProviders(
+      enabledProviders(
         [
           { enabled: true, id: 'openai' },
           { enabled: false, id: 'anthropic' },
@@ -121,7 +121,7 @@ describe('server.capabilities', () => {
 });
 
 describe('server.providers', () => {
-  it('fails when no provider can be called at all', async () => {
+  it('fails when no provider is enabled at all', async () => {
     state.providers = [{ enabled: false, id: 'openai' }];
     state.globalConfig = { serverConfig: { aiProvider: {} } };
 
@@ -129,5 +129,16 @@ describe('server.providers', () => {
 
     expect(outcome.status).toBe('fail');
     expect(outcome.fix).toContain('<PROVIDER>_API_KEY');
+  });
+
+  it('claims enablement, not a usable key, for the providers it lists', async () => {
+    state.providers = [{ enabled: true, id: 'openai' }];
+    state.globalConfig = { serverConfig: { aiProvider: {} } };
+
+    const outcome = await runCheck(serverChecks, 'server.providers');
+
+    expect(outcome.status).toBe('ok');
+    expect(outcome.detail).toContain('1 enabled provider(s)');
+    expect(outcome.detail).not.toContain('usable');
   });
 });

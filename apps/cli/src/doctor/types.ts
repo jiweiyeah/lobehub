@@ -56,8 +56,15 @@ export const DOCTOR_PROFILES: readonly DoctorProfile[] = [...SELECTABLE_PROFILES
 export interface CheckOutcome {
   /** One line, the finding itself. */
   detail: string;
-  /** Structured facts a script can assert on; never contains secrets. */
-  evidence?: Record<string, unknown>;
+  /**
+   * Structured facts a script can assert on; never contains secrets.
+   *
+   * A `repairable` key is the check's signal that THIS finding is one `--fix`
+   * can act on, and which one it is: a check that detects several broken states
+   * repairs only the state it actually found. Without it the runner leaves the
+   * finding alone, so a warning nobody can fix produces no failed-repair noise.
+   */
+  evidence?: Record<string, unknown> & { repairable?: string };
   /** What the user should do about it. */
   fix?: string;
   /**
@@ -125,8 +132,9 @@ export interface DoctorCheck {
   profiles: readonly SelectableProfile[];
   /**
    * Undo the specific broken state this check detects. Runs only under `--fix`,
-   * only when the check did not pass, and the check is re-run afterwards so the
-   * report shows the post-repair truth. Returns what it did.
+   * only when the check did not pass AND reported `evidence.repairable`, and
+   * the check is re-run afterwards so the report shows the post-repair truth.
+   * Returns what it did.
    */
   repair?: (ctx: DoctorContext, result: CheckResult) => Promise<string> | string;
   run: (ctx: DoctorContext) => Promise<CheckOutcome> | CheckOutcome;

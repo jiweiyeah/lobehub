@@ -135,7 +135,7 @@ describe('runDoctor', () => {
             broken = false;
             return 'unbroke it';
           },
-          run: () => (broken ? fail : ok),
+          run: () => (broken ? { ...fail, evidence: { repairable: 'the-thing' } } : ok),
         }),
       ],
       { ...baseOptions, fix: true },
@@ -148,11 +148,15 @@ describe('runDoctor', () => {
   it('records a repair that threw without losing the original finding', async () => {
     const report = await runDoctor(
       [
-        check('fixable', fail, {
-          repair: () => {
-            throw new Error('permission denied');
+        check(
+          'fixable',
+          { ...fail, evidence: { repairable: 'the-thing' } },
+          {
+            repair: () => {
+              throw new Error('permission denied');
+            },
           },
-        }),
+        ),
       ],
       { ...baseOptions, fix: true },
     );
@@ -167,6 +171,20 @@ describe('runDoctor', () => {
 
     expect(repair).not.toHaveBeenCalled();
     expect(report.repairs).toBeUndefined();
+  });
+
+  it('does not invoke a repair for a finding the check did not call repairable', async () => {
+    // Otherwise `--fix` reports a failed repair for every warning that simply
+    // has nothing to undo, e.g. "no daemon is running".
+    const repair = vi.fn(() => 'nope');
+    const report = await runDoctor([check('unfixable', fail, { repair })], {
+      ...baseOptions,
+      fix: true,
+    });
+
+    expect(repair).not.toHaveBeenCalled();
+    expect(report.repairs).toBeUndefined();
+    expect(report.checks[0]?.status).toBe('fail');
   });
 
   it('summarises and ranks the overall status by the worst result', async () => {

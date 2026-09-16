@@ -15,7 +15,13 @@ const workspaceScope: DoctorCheck = {
   group: 'scope',
   id: 'scope.workspace',
   profiles: ['core'],
-  repair: () => {
+  repair: (_ctx, result) => {
+    // A saved scope that an env var merely overrides for this one run is still
+    // the user's valid selection — dropping it would silently move them to
+    // personal scope the moment the override goes away.
+    if (result.evidence?.repairable !== 'stale')
+      throw new Error('the saved workspace scope is valid; only an unusable one is dropped');
+
     saveActiveWorkspace(null);
     return 'cleared the stale workspace scope; commands now run in personal scope';
   },
@@ -67,7 +73,7 @@ const workspaceScope: DoctorCheck = {
     if (reason)
       return {
         detail: `The saved scope ${stored.workspaceId} is being ignored because ${reason}.`,
-        evidence,
+        evidence: { ...evidence, repairable: 'stale' },
         fix: `Re-select it with 'lh workspace use ${stored.workspaceId}', or re-run with --fix to drop it.`,
         status: 'fail',
       };
