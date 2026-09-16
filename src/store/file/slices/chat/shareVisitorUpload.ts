@@ -1,4 +1,4 @@
-import { SHARE_VISITOR_MAX_FILE_SIZE } from '@lobechat/const';
+import { SHARE_UPLOAD_STORAGE_BLOCK_PREFIX, SHARE_VISITOR_MAX_FILE_SIZE } from '@lobechat/const';
 
 import { hashFile } from '@/services/hashFile';
 import { shareChatService } from '@/services/shareChat';
@@ -16,9 +16,7 @@ type OnStatusUpdate = (data: {
   value: Partial<UploadFileItem>;
 }) => void;
 
-export const SHARE_UPLOAD_STORAGE_BLOCK_PREFIX = 'storage_block:';
-
-/** The creator's storage quota refused the bytes (`shareChat.createUploadUrl`). */
+/** Storage refused the bytes — the share's upload cap or the creator's quota (`shareChat.createUploadUrl`). */
 export const isShareStorageBlockError = (error: unknown) =>
   error instanceof Error && error.message.startsWith(SHARE_UPLOAD_STORAGE_BLOCK_PREFIX);
 

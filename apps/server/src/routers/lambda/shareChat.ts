@@ -1,6 +1,8 @@
 import {
+  AGENT_SHARE_DEFAULT_MAX_FILE_STORAGE,
   AGENT_SHARE_DEFAULT_MAX_TOPICS_PER_VISITOR,
   AGENT_SHARE_DEFAULT_MAX_TURNS_PER_TOPIC,
+  SHARE_UPLOAD_STORAGE_BLOCK_PREFIX,
   SHARE_VISITOR_MAX_FILE_SIZE,
   SHARE_VISITOR_MAX_FILES_PER_TURN,
   SHARE_VISITOR_PROMPT_MAX_LENGTH,
@@ -217,6 +219,30 @@ const authorizeVisitorRunningOperation = async (
 const shareUploadPrefix = (ownerId: string, shareId: string) =>
   `files/${ownerId}/agent-share/${shareId}/`;
 
+/**
+ * Visitor-facing storage refusal, one shape for two causes: the share's own
+ * `maxFileStorage` cap (`share_limit`), or the creator's account-level block
+ * from the deployment's upload check (`creator_quota`). The latter's original
+ * reason describes the creator's billing state; it is collapsed here because
+ * a stranger with the link must not learn it, and the visitor's remedy is the
+ * same either way. The client matches only the prefix.
+ */
+const shareStorageBlocked = (cause: 'creator_quota' | 'share_limit') =>
+  new TRPCError({ code: 'FORBIDDEN', message: `${SHARE_UPLOAD_STORAGE_BLOCK_PREFIX}${cause}` });
+
+const toVisitorStorageBlock = (error: unknown) => {
+  if (
+    error instanceof TRPCError &&
+    error.code === 'FORBIDDEN' &&
+    error.message.startsWith(SHARE_UPLOAD_STORAGE_BLOCK_PREFIX) &&
+    error.message !== `${SHARE_UPLOAD_STORAGE_BLOCK_PREFIX}share_limit`
+  ) {
+    log('creator storage block collapsed for visitor: %s', error.message);
+    return shareStorageBlocked('creator_quota');
+  }
+  return error;
+};
+
 /** Basename only — a visitor-supplied name must not steer the storage key. */
 const sanitizeUploadName = (name: string) =>
   name
@@ -421,24 +447,50 @@ export const shareChatRouter = router({
       z.object({
         name: z.string().min(1).max(255),
         shareId: z.string(),
+        // `min(0)` is load-bearing beyond validation: the reservation runs the
+        // size through the deployment's upload check AS THE CREATOR, so a
+        // visitor-supplied negative size must never reach it.
         size: z.number().int().min(0).max(SHARE_VISITOR_MAX_FILE_SIZE),
       }),
     )
     .mutation(async ({ input, ctx }) => {
       const share = await resolveLinkShareOrThrow(ctx.serverDB, input.shareId, ctx.userId);
 
-      const pathname = `${shareUploadPrefix(share.ownerId, share.shareId)}${nanoid()}/${sanitizeUploadName(input.name)}`;
-      const s3 = new FileS3();
+      const maxFileStorage =
+        share.shareConfig.maxFileStorage ?? AGENT_SHARE_DEFAULT_MAX_FILE_STORAGE;
+      // Cheap pre-check (also what turns attachments off at `0`) before any
+      // storage round-trip; the real, race-free check is `admit` below.
+      if (input.size > maxFileStorage) throw shareStorageBlocked('share_limit');
 
-      await reserveUpload({
-        clientIp: ctx.clientIp ?? undefined,
-        db: ctx.serverDB,
-        model: new FileUploadModel(ctx.serverDB, share.ownerId),
-        pathname,
-        size: input.size,
-        storage: s3,
-        userId: share.ownerId,
-      });
+      const prefix = shareUploadPrefix(share.ownerId, share.shareId);
+      const pathname = `${prefix}${nanoid()}/${sanitizeUploadName(input.name)}`;
+      const s3 = new FileS3();
+      const uploadModel = new FileUploadModel(ctx.serverDB, share.ownerId);
+      const fileModel = new FileModel(ctx.serverDB, share.ownerId);
+
+      try {
+        await reserveUpload({
+          // The share's own cap: settled visitor files plus every live
+          // reservation under the share prefix, counted inside the reservation
+          // transaction so two concurrent visitors cannot both slip under it.
+          admit: async (transaction) => {
+            const settled = await fileModel.countAgentShareUsage(share.shareId, transaction);
+            const reserved = await uploadModel.countLiveUsageUnderPrefix(prefix, transaction);
+            if (settled + reserved + input.size > maxFileStorage) {
+              throw shareStorageBlocked('share_limit');
+            }
+          },
+          clientIp: ctx.clientIp ?? undefined,
+          db: ctx.serverDB,
+          model: uploadModel,
+          pathname,
+          size: input.size,
+          storage: s3,
+          userId: share.ownerId,
+        });
+      } catch (error) {
+        throw toVisitorStorageBlock(error);
+      }
 
       try {
         return { pathname, url: await s3.createPreSignedUrl(pathname, input.size) };

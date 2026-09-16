@@ -396,6 +396,9 @@ export default {
   'share.entry': 'Share this Agent',
   'share.settings.limits.desc':
     'Every visitor run is billed to your account, so these caps are what keep a shared link from running up your bill. They always apply — you can change the numbers, but not turn them off.',
+  'share.settings.limits.maxFileStorage': 'Visitor upload space (MB)',
+  'share.settings.limits.maxFileStorageHint':
+    'Files visitors attach are stored on your account. Uploads stop once they reach this total; set 0 to turn attachments off.',
   'share.settings.limits.maxTopicsPerVisitor': 'Conversations per visitor',
   'share.settings.limits.maxTopicsPerVisitorHint':
     'How many separate conversations each signed-in visitor can start.',
@@ -537,18 +540,21 @@ export default {
   'share.visitor.profile.terms.tools_other': '{{count}} tools are open to visitors.',
   'share.visitor.profile.terms.topics': 'You can open up to {{count}} conversations.',
   'share.visitor.profile.terms.turns': 'Each conversation allows up to {{count}} turns.',
+  'share.visitor.profile.terms.uploads':
+    'You can attach files; this Agent has {{size}} of upload space for visitors.',
+  'share.visitor.profile.terms.uploadsOff': 'Attachments are turned off.',
   'share.visitor.profile.terms.visibilityCreator':
     'The creator has turned on session review, so they can read this conversation.',
   'share.visitor.profile.terms.visibilityPrivate': 'Only you can see your conversations.',
-  'share.visitor.upload.creatorStorageBlocked':
-    "This agent's storage is full. Ask its creator to free up space.",
-  'share.visitor.upload.fileTooLarge': 'Files must be under {{max}}.',
-  'share.visitor.upload.tooManyFiles': 'You can attach up to {{max}} files per message.',
   'share.visitor.topBar.home': 'Go to my LobeHub',
   'share.visitor.topics.empty': 'No conversations yet',
   'share.visitor.topics.new': 'New conversation',
   'share.visitor.topics.title': 'Conversations',
   'share.visitor.topics.untitled': 'Untitled conversation',
+  'share.visitor.upload.creatorStorageBlocked':
+    "This Agent's upload space is full. Ask its creator to free up room or raise the cap.",
+  'share.visitor.upload.fileTooLarge': 'Files must be under {{max}}.',
+  'share.visitor.upload.tooManyFiles': 'You can attach up to {{max}} files per message.',
 
   'transfer.title': 'Move',
   'transfer.copyTo': 'Copy to…',

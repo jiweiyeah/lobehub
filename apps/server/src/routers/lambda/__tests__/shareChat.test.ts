@@ -103,8 +103,10 @@ const mockFileFindByIds = vi.fn();
 const mockFileFindById = vi.fn();
 const mockFileCreate = vi.fn();
 const mockFileDeleteUnreferenced = vi.fn();
+const mockFileCountAgentShareUsage = vi.fn();
 const FileModelMock = vi.fn(function () {
   return {
+    countAgentShareUsage: mockFileCountAgentShareUsage,
     create: mockFileCreate,
     deleteUnreferenced: mockFileDeleteUnreferenced,
     findById: mockFileFindById,
@@ -120,8 +122,9 @@ vi.mock('@/server/services/fileUploadReservation', () => ({
   reserveUpload: (...args: any[]) => mockReserveUpload(...args),
 }));
 
+const mockUploadCountLiveUnderPrefix = vi.fn();
 const FileUploadModelMock = vi.fn(function () {
-  return {};
+  return { countLiveUsageUnderPrefix: mockUploadCountLiveUnderPrefix };
 });
 vi.mock('@/database/models/fileUpload', () => ({
   FileUploadModel: FileUploadModelMock,
@@ -575,6 +578,57 @@ describe('shareChatRouter', () => {
 
   describe('createUploadUrl', () => {
     const prefix = `files/${OWNER}/agent-share/share-1/`;
+    const MB = 1024 * 1024;
+
+    beforeEach(() => {
+      mockFileCountAgentShareUsage.mockResolvedValue(0);
+      mockUploadCountLiveUnderPrefix.mockResolvedValue(0);
+      // Run the share's `admit` hook the way the real reservation does: inside
+      // the transaction, before anything is inserted.
+      mockReserveUpload.mockImplementation(
+        async (params: { admit?: (trx: unknown) => Promise<void>; size: number }) => {
+          await params.admit?.({ trx: true });
+          return { id: 'upload-1', size: params.size };
+        },
+      );
+    });
+
+    it("counts the share's settled files and live reservations inside the reservation transaction", async () => {
+      mockFileCountAgentShareUsage.mockResolvedValue(500 * MB);
+      mockUploadCountLiveUnderPrefix.mockResolvedValue(11 * MB);
+      const caller = await createCaller();
+
+      // 500 + 11 + 1 = 512 MB: exactly at the default cap is still admitted.
+      await caller.createUploadUrl({ name: 'cat.png', shareId: 'share-1', size: 1 * MB });
+
+      expect(mockFileCountAgentShareUsage).toHaveBeenCalledWith('share-1', { trx: true });
+      expect(mockUploadCountLiveUnderPrefix).toHaveBeenCalledWith(prefix, { trx: true });
+      expect(mockCreatePreSignedUrl).toHaveBeenCalled();
+    });
+
+    it("refuses with a share_limit block once the share's upload space is used up", async () => {
+      mockFileCountAgentShareUsage.mockResolvedValue(500 * MB);
+      mockUploadCountLiveUnderPrefix.mockResolvedValue(11 * MB);
+      const caller = await createCaller();
+
+      await expect(
+        caller.createUploadUrl({ name: 'cat.png', shareId: 'share-1', size: 2 * MB }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN', message: 'storage_block:share_limit' });
+      expect(mockCreatePreSignedUrl).not.toHaveBeenCalled();
+    });
+
+    it('honours a creator-configured cap and turns attachments off at 0 before any reservation', async () => {
+      mockAccessCheck.mockResolvedValue({
+        ...share,
+        shareConfig: { ...share.shareConfig, maxFileStorage: 0 },
+      });
+      const caller = await createCaller();
+
+      await expect(
+        caller.createUploadUrl({ name: 'cat.png', shareId: 'share-1', size: 1 }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN', message: 'storage_block:share_limit' });
+      expect(mockReserveUpload).not.toHaveBeenCalled();
+    });
 
     it("reserves the upload under the CREATOR's storage quota and returns a share-prefixed key", async () => {
       const caller = await createCaller();
@@ -610,16 +664,29 @@ describe('shareChatRouter', () => {
       expect(result.pathname.endsWith('/.._.._etc_passwd')).toBe(true);
     });
 
-    it("propagates the creator's storage_block reason and never reaches S3", async () => {
+    it("collapses the creator's storage_block reason to a visitor-safe code and never reaches S3", async () => {
+      // The original reason describes the creator's billing state — a
+      // stranger with the link must not learn it.
       mockReserveUpload.mockRejectedValue(
-        new TRPCError({ code: 'FORBIDDEN', message: 'storage_block:upgrade_required' }),
+        new TRPCError({ code: 'FORBIDDEN', message: 'storage_block:subscription_past_due' }),
       );
       const caller = await createCaller();
 
       await expect(
         caller.createUploadUrl({ name: 'cat.png', shareId: 'share-1', size: 10 }),
-      ).rejects.toMatchObject({ code: 'FORBIDDEN', message: 'storage_block:upgrade_required' });
+      ).rejects.toMatchObject({ code: 'FORBIDDEN', message: 'storage_block:creator_quota' });
       expect(mockCreatePreSignedUrl).not.toHaveBeenCalled();
+    });
+
+    it('passes other reservation failures through untouched', async () => {
+      mockReserveUpload.mockRejectedValue(
+        new TRPCError({ code: 'CONFLICT', message: 'Upload pathname is already reserved' }),
+      );
+      const caller = await createCaller();
+
+      await expect(
+        caller.createUploadUrl({ name: 'cat.png', shareId: 'share-1', size: 10 }),
+      ).rejects.toMatchObject({ code: 'CONFLICT', message: 'Upload pathname is already reserved' });
     });
 
     it('releases the reservation when minting the pre-signed URL fails', async () => {

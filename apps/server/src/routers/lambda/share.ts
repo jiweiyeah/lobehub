@@ -1,5 +1,6 @@
 import { DEFAULT_PROVIDER } from '@lobechat/business-const';
 import {
+  AGENT_SHARE_DEFAULT_MAX_FILE_STORAGE,
   AGENT_SHARE_DEFAULT_MAX_TOPICS_PER_VISITOR,
   AGENT_SHARE_DEFAULT_MAX_TURNS_PER_TOPIC,
   DEFAULT_MODEL,
@@ -151,6 +152,7 @@ export const shareRouter = router({
         stats: { ...stats, views: share.userViewCount },
         terms: {
           allowCreatorViewSessions: share.shareConfig.allowCreatorViewSessions ?? false,
+          maxFileStorage: share.shareConfig.maxFileStorage ?? AGENT_SHARE_DEFAULT_MAX_FILE_STORAGE,
           maxTopicsPerVisitor:
             share.shareConfig.maxTopicsPerVisitor ?? AGENT_SHARE_DEFAULT_MAX_TOPICS_PER_VISITOR,
           maxTurnsPerTopic:

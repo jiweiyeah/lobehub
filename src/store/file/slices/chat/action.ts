@@ -201,6 +201,10 @@ export class FileActionImpl {
     // Share uploads are creator-owned rows the visitor's own file API cannot
     // see; the share endpoint deletes them only while still unsent.
     if (item?.shareId) {
+      // Only a settled upload has a server row to drop; a pending or failed
+      // draft is client-side only (its id is still the file name) and the
+      // share endpoint would just reject it.
+      if (item.status !== 'success') return;
       await shareChatService.removeFile(item.shareId, id);
       return;
     }

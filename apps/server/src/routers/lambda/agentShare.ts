@@ -37,6 +37,8 @@ export const agentShareConfigSchema = z
   .object({
     allowCreatorViewSessions: z.boolean().optional(),
     allowReadMemory: z.boolean().optional(),
+    /** Bytes; `0` is a real value (attachments off), so non-negative rather than positive. */
+    maxFileStorage: z.number().int().nonnegative().optional(),
     /**
      * The visitor topic list (`TopicModel.queryBySender`) is not paginated
      * and is bounded by `AGENT_SHARE_VISITOR_TOPIC_LIST_LIMIT`, so a cap

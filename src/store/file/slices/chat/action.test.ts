@@ -390,7 +390,9 @@ describe('useFileStore:chat', () => {
       const { result } = renderHook(() => useStore());
 
       act(() => {
-        useStore.setState({ chatUploadFileList: [{ id: 'file-1', shareId: 'share-1' }] as any });
+        useStore.setState({
+          chatUploadFileList: [{ id: 'file-1', shareId: 'share-1', status: 'success' }] as any,
+        });
       });
 
       await act(async () => {
@@ -400,6 +402,24 @@ describe('useFileStore:chat', () => {
       expect(result.current.chatUploadFileList).toEqual([]);
       expect(shareChatService.removeFile).toHaveBeenCalledWith('share-1', 'file-1');
       expect(removeFile).not.toHaveBeenCalled();
+    });
+
+    it('drops an unsettled share draft locally without calling the share endpoint', async () => {
+      const { result } = renderHook(() => useStore());
+
+      act(() => {
+        // Still keyed by file name: nothing exists server-side to delete.
+        useStore.setState({
+          chatUploadFileList: [{ id: 'cat.png', shareId: 'share-1', status: 'error' }] as any,
+        });
+      });
+
+      await act(async () => {
+        await result.current.removeChatUploadFile('cat.png');
+      });
+
+      expect(result.current.chatUploadFileList).toEqual([]);
+      expect(shareChatService.removeFile).not.toHaveBeenCalled();
     });
 
     it('deletes the underlying file for a normal uploaded item', async () => {

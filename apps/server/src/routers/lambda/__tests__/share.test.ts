@@ -172,6 +172,7 @@ describe('shareRouter', () => {
         stats: { conversations: 12, views: 42, visitors: 7 },
         terms: {
           allowCreatorViewSessions: false,
+          maxFileStorage: 512 * 1024 * 1024,
           maxTopicsPerVisitor: 5,
           maxTurnsPerTopic: 20,
         },

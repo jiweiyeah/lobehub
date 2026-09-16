@@ -1,4 +1,5 @@
 import {
+  AGENT_SHARE_DEFAULT_MAX_FILE_STORAGE,
   AGENT_SHARE_DEFAULT_MAX_TOPICS_PER_VISITOR,
   AGENT_SHARE_DEFAULT_MAX_TURNS_PER_TOPIC,
   AGENT_SHARE_DEFAULT_MONTHLY_SPEND_LIMIT,
@@ -23,6 +24,7 @@ import { isUuid } from '../utils/uuid';
 const DEFAULT_AGENT_SHARE_CONFIG = {
   allowCreatorViewSessions: false,
   allowReadMemory: false,
+  maxFileStorage: AGENT_SHARE_DEFAULT_MAX_FILE_STORAGE,
   maxTopicsPerVisitor: AGENT_SHARE_DEFAULT_MAX_TOPICS_PER_VISITOR,
   maxTurnsPerTopic: AGENT_SHARE_DEFAULT_MAX_TURNS_PER_TOPIC,
   monthlySpendLimit: AGENT_SHARE_DEFAULT_MONTHLY_SPEND_LIMIT,
@@ -38,6 +40,7 @@ const normalizeAgentShareConfig = (
   allowCreatorViewSessions:
     config?.allowCreatorViewSessions ?? DEFAULT_AGENT_SHARE_CONFIG.allowCreatorViewSessions,
   allowReadMemory: config?.allowReadMemory ?? DEFAULT_AGENT_SHARE_CONFIG.allowReadMemory,
+  maxFileStorage: config?.maxFileStorage ?? DEFAULT_AGENT_SHARE_CONFIG.maxFileStorage,
   maxTopicsPerVisitor:
     config?.maxTopicsPerVisitor ?? DEFAULT_AGENT_SHARE_CONFIG.maxTopicsPerVisitor,
   maxTurnsPerTopic: config?.maxTurnsPerTopic ?? DEFAULT_AGENT_SHARE_CONFIG.maxTurnsPerTopic,

@@ -828,6 +828,31 @@ describe('FileModel', () => {
     });
   });
 
+  describe('countAgentShareUsage', () => {
+    it("sums only this user's agent_share files that belong to the given share", async () => {
+      const base = { fileType: 'text/plain', url: 'https://example.com/f' };
+      const visitorFile = (shareId: string, size: number) => ({
+        ...base,
+        metadata: { agentShare: { shareId, visitorUserId: 'visitor' } },
+        name: `${shareId}-${size}`,
+        size,
+        source: FileSource.AgentShare,
+      });
+
+      await fileModel.create(visitorFile('share-a', 10));
+      await fileModel.create(visitorFile('share-a', 20));
+      await fileModel.create(visitorFile('share-b', 40));
+      // Same provenance shape on a plain library upload: not a visitor file.
+      await fileModel.create({ ...visitorFile('share-a', 80), source: undefined });
+      // Another user's visitor file on the same share id.
+      await new FileModel(serverDB, 'user2').create(visitorFile('share-a', 160));
+
+      expect(await fileModel.countAgentShareUsage('share-a')).toBe(30);
+      expect(await fileModel.countAgentShareUsage('share-b')).toBe(40);
+      expect(await fileModel.countAgentShareUsage('share-none')).toBe(0);
+    });
+  });
+
   describe('findById', () => {
     it('should find a file by id', async () => {
       const { id } = await fileModel.create({

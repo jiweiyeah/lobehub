@@ -1,5 +1,5 @@
 import type { QueryFileListParams } from '@lobechat/types';
-import { FilesTabs, LIBRARY_HIDDEN_FILE_SOURCES, SortType } from '@lobechat/types';
+import { FileSource, FilesTabs, LIBRARY_HIDDEN_FILE_SOURCES, SortType } from '@lobechat/types';
 import {
   and,
   asc,
@@ -272,6 +272,28 @@ export class FileModel {
       .where(this.ownership());
 
     return parseInt(result[0].totalSize!) || 0;
+  };
+
+  /**
+   * Bytes occupied by one agent share's visitor uploads: this user's
+   * `agent_share` rows whose provenance names `shareId`. Backs the share's
+   * `maxFileStorage` cap (`shareChat.createUploadUrl`), so it accepts the
+   * reservation transaction to be counted inside it.
+   */
+  countAgentShareUsage = async (shareId: string, trx?: Transaction) => {
+    const db = trx ?? this.db;
+    const [row] = await db
+      .select({ totalSize: sum(files.size) })
+      .from(files)
+      .where(
+        and(
+          this.ownership(),
+          eq(files.source, FileSource.AgentShare),
+          sql`${files.metadata} -> 'agentShare' ->> 'shareId' = ${shareId}`,
+        ),
+      );
+
+    return Number(row?.totalSize ?? 0);
   };
 
   deleteMany = async (

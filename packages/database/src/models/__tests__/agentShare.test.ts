@@ -174,6 +174,7 @@ describe('AgentShareModel', () => {
       expect(ownerShare?.shareConfig).toEqual({
         allowCreatorViewSessions: false,
         allowReadMemory: false,
+        maxFileStorage: 512 * 1024 * 1024,
         maxTopicsPerVisitor: 5,
         maxTurnsPerTopic: 20,
         monthlySpendLimit: 10,
@@ -190,6 +191,7 @@ describe('AgentShareModel', () => {
       const config: AgentShareConfig = {
         allowCreatorViewSessions: true,
         allowReadMemory: true,
+        maxFileStorage: 256 * 1024 * 1024,
         maxTopicsPerVisitor: 10,
         maxTurnsPerTopic: 40,
         monthlySpendLimit: 25,

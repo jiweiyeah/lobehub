@@ -32,6 +32,13 @@ const isMissingObject = (error: unknown) => {
  * caller — the quota that pays for the bytes is the one that gets reserved.
  */
 export const reserveUpload = async (params: {
+  /**
+   * Caller-specific admission (e.g. the agent-share upload cap), run inside
+   * the same serialized transaction as the quota check so two concurrent
+   * reservations cannot both slip under a cap that counts live reservations.
+   * Throw to refuse; nothing has been inserted yet.
+   */
+  admit?: (transaction: Transaction) => Promise<void>;
   clientIp?: string;
   db: LobeChatDatabase;
   model: FileUploadModel;
@@ -64,6 +71,8 @@ export const reserveUpload = async (params: {
         throw error;
       });
     if (objectExists) throw uploadConflict('Upload pathname is already in use');
+
+    await params.admit?.(transaction);
 
     try {
       await businessFileUploadCheck({

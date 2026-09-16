@@ -9,6 +9,11 @@ import type { ShareVisibility } from '../topic';
 export interface SharedAgentTerms {
   /** Whether the creator opted into reading visitor conversations. */
   allowCreatorViewSessions: boolean;
+  /**
+   * Total upload space (bytes) the creator opened to visitor attachments on
+   * this share; `0` means attachments are off and the composer hides them.
+   */
+  maxFileStorage: number;
   /** Maximum conversations this visitor may open against the share. */
   maxTopicsPerVisitor: number;
   /** Maximum message turns allowed inside one shared conversation. */
