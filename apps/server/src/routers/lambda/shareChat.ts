@@ -447,10 +447,12 @@ export const shareChatRouter = router({
       z.object({
         name: z.string().min(1).max(255),
         shareId: z.string(),
-        // `min(0)` is load-bearing beyond validation: the reservation runs the
+        // `min(1)` is load-bearing beyond validation: the reservation runs the
         // size through the deployment's upload check AS THE CREATOR, so a
-        // visitor-supplied negative size must never reach it.
-        size: z.number().int().min(0).max(SHARE_VISITOR_MAX_FILE_SIZE),
+        // visitor-supplied negative size must never reach it — and a zero-byte
+        // reservation adds nothing to the cap sum, so it would let unbounded
+        // rows (and objects) pile up under the creator's prefix.
+        size: z.number().int().min(1).max(SHARE_VISITOR_MAX_FILE_SIZE),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -458,9 +460,12 @@ export const shareChatRouter = router({
 
       const maxFileStorage =
         share.shareConfig.maxFileStorage ?? AGENT_SHARE_DEFAULT_MAX_FILE_STORAGE;
-      // Cheap pre-check (also what turns attachments off at `0`) before any
-      // storage round-trip; the real, race-free check is `admit` below.
-      if (input.size > maxFileStorage) throw shareStorageBlocked('share_limit');
+      // Cheap pre-check before any storage round-trip; the real, race-free
+      // check is `admit` below. `<= 0` is the creator turning attachments off
+      // and refuses regardless of size.
+      if (maxFileStorage <= 0 || input.size > maxFileStorage) {
+        throw shareStorageBlocked('share_limit');
+      }
 
       const prefix = shareUploadPrefix(share.ownerId, share.shareId);
       const pathname = `${prefix}${nanoid()}/${sanitizeUploadName(input.name)}`;
@@ -472,8 +477,11 @@ export const shareChatRouter = router({
         await reserveUpload({
           // The share's own cap: settled visitor files plus every live
           // reservation under the share prefix, counted inside the reservation
-          // transaction so two concurrent visitors cannot both slip under it.
+          // transaction. The counts alone are not race-free (the reservation's
+          // own row lock comes after this hook), so the decision is serialized
+          // per share first — see `AgentShareModel.lockUploadAdmission`.
           admit: async (transaction) => {
+            await AgentShareModel.lockUploadAdmission(transaction, share.shareId);
             const settled = await fileModel.countAgentShareUsage(share.shareId, transaction);
             const reserved = await uploadModel.countLiveUsageUnderPrefix(prefix, transaction);
             if (settled + reserved + input.size > maxFileStorage) {

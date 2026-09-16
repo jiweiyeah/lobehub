@@ -424,6 +424,23 @@ export class AgentShareModel {
   };
 
   /**
+   * Serialize the per-share upload cap decision, to be called from inside the
+   * reservation transaction BEFORE the usage is counted. The cap is a sum over
+   * two tables (settled visitor files + live reservations) that no row lock
+   * covers, and the only lock the reservation itself takes — the creator's
+   * users row, inside the deployment's quota check — comes AFTER the caller's
+   * admission hook. Without this barrier two concurrent visitors both read the
+   * pre-insert sum and both slip under the cap. Transaction-scoped advisory
+   * lock keyed by share id (same pattern as the slug barrier), released
+   * automatically at commit/rollback.
+   */
+  static lockUploadAdmission = async (tx: LobeChatDatabase, shareId: string): Promise<void> => {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${`agent_share_upload:${shareId}`}))`,
+    );
+  };
+
+  /**
    * Whether an in-flight visitor run is STILL authorized to continue: the
    * agent's share row must exist, still be the SAME instance the run was
    * authorized against (`shareId`), and still be `link`.

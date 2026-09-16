@@ -52,8 +52,12 @@ vi.mock('@/server/featureFlags', () => ({
 }));
 
 const mockAccessCheck = vi.fn();
+const mockLockUploadAdmission = vi.fn();
 vi.mock('@/database/models/agentShare', () => ({
-  AgentShareModel: { findByShareIdWithAccessCheck: (...args: any[]) => mockAccessCheck(...args) },
+  AgentShareModel: {
+    findByShareIdWithAccessCheck: (...args: any[]) => mockAccessCheck(...args),
+    lockUploadAdmission: (...args: any[]) => mockLockUploadAdmission(...args),
+  },
 }));
 
 const mockFindById = vi.fn();
@@ -606,6 +610,39 @@ describe('shareChatRouter', () => {
       expect(mockCreatePreSignedUrl).toHaveBeenCalled();
     });
 
+    it('serializes the cap decision on the share BEFORE counting, inside the same transaction', async () => {
+      // The counts alone are racy: nothing row-locks a sum over two tables, and
+      // the reservation's own users-row lock is taken after `admit`. Two
+      // concurrent visitors must therefore queue on the share lock first.
+      const order: string[] = [];
+      mockLockUploadAdmission.mockImplementation(async () => {
+        order.push('lock');
+      });
+      mockFileCountAgentShareUsage.mockImplementation(async () => {
+        order.push('settled');
+        return 0;
+      });
+      mockUploadCountLiveUnderPrefix.mockImplementation(async () => {
+        order.push('reserved');
+        return 0;
+      });
+      const caller = await createCaller();
+
+      await caller.createUploadUrl({ name: 'cat.png', shareId: 'share-1', size: 10 });
+
+      expect(mockLockUploadAdmission).toHaveBeenCalledWith({ trx: true }, 'share-1');
+      expect(order).toEqual(['lock', 'settled', 'reserved']);
+    });
+
+    it('rejects a zero-byte reservation even though it would add nothing to the cap sum', async () => {
+      const caller = await createCaller();
+
+      await expect(
+        caller.createUploadUrl({ name: 'cat.png', shareId: 'share-1', size: 0 }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+      expect(mockReserveUpload).not.toHaveBeenCalled();
+    });
+
     it("refuses with a share_limit block once the share's upload space is used up", async () => {
       mockFileCountAgentShareUsage.mockResolvedValue(500 * MB);
       mockUploadCountLiveUnderPrefix.mockResolvedValue(11 * MB);
@@ -621,6 +658,22 @@ describe('shareChatRouter', () => {
       mockAccessCheck.mockResolvedValue({
         ...share,
         shareConfig: { ...share.shareConfig, maxFileStorage: 0 },
+      });
+      const caller = await createCaller();
+
+      await expect(
+        caller.createUploadUrl({ name: 'cat.png', shareId: 'share-1', size: 1 }),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN', message: 'storage_block:share_limit' });
+      expect(mockReserveUpload).not.toHaveBeenCalled();
+    });
+
+    it('refuses even a request that clears the size pre-check when the cap is 0', async () => {
+      // Guards the `maxFileStorage <= 0` branch on its own: a request whose size
+      // slips past `size > maxFileStorage` (only possible at 0 with a size of 0,
+      // which zod refuses, or via a future relaxation) must still be turned away.
+      mockAccessCheck.mockResolvedValue({
+        ...share,
+        shareConfig: { ...share.shareConfig, maxFileStorage: -1 },
       });
       const caller = await createCaller();
 
