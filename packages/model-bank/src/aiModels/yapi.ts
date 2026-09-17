@@ -4,6 +4,26 @@ import type { AIChatModelCard } from '../types/aiModel';
 // An OpenAI-compatible relay. Model ids keep the upstream organization prefix
 // (`openai/gpt-5.6-sol`) exactly as `GET /v1/models` returns them, so they are
 // listed verbatim rather than rewritten.
+//
+// Reasoning controls: this relay is narrower than the labs it fronts, so the
+// cards reuse the shared param whose value set matches what Y-API accepts
+// rather than the lab-named one. Measured against the live API 2026-09-17 by
+// sending each level n=5 and reading the rejection:
+//
+//   openai/gpt-5.6-*    accepts none|low|medium|high|xhigh, rejects max (5/5 400)
+//   openai/gpt-6-astra  accepts low|medium|high|xhigh, rejects none and max (5/5 400)
+//   tencent/hy3         accepts low|high, rejects no_think (5/5 400; low and
+//                       high each returned 5/5 200 as controls)
+//
+// The rejections are hard 400s, e.g.
+//   "Unsupported value: 'reasoning_effort' does not support 'max' with this
+//    model. Supported values are: 'none', 'low', 'medium', 'high', and 'xhigh'."
+//
+// so the lab-named `gpt5_6ReasoningEffort` / `gpt6ReasoningEffort` /
+// `hy3ReasoningEffort` — which respectively include `max`, `max`, and
+// `no_think` — would each let a user pick a level that fails every request.
+// The first-party `hunyuan` provider keeps `hy3ReasoningEffort`; Hunyuan's own
+// API does accept `no_think`, it is only this relay that does not.
 const yapiChatModels: AIChatModelCard[] = [
   {
     abilities: {
@@ -159,7 +179,7 @@ const yapiChatModels: AIChatModelCard[] = [
       ],
     },
     settings: {
-      extendParams: ['gpt5_6ReasoningEffort'],
+      extendParams: ['gpt5_2ReasoningEffort'],
     },
     type: 'chat',
   },
@@ -187,7 +207,7 @@ const yapiChatModels: AIChatModelCard[] = [
       ],
     },
     settings: {
-      extendParams: ['gpt5_6ReasoningEffort'],
+      extendParams: ['gpt5_2ReasoningEffort'],
     },
     type: 'chat',
   },
@@ -214,7 +234,7 @@ const yapiChatModels: AIChatModelCard[] = [
       ],
     },
     settings: {
-      extendParams: ['gpt5_6ReasoningEffort'],
+      extendParams: ['gpt5_2ReasoningEffort'],
     },
     type: 'chat',
   },
@@ -241,7 +261,7 @@ const yapiChatModels: AIChatModelCard[] = [
       ],
     },
     settings: {
-      extendParams: ['gpt6ReasoningEffort'],
+      extendParams: ['codexMaxReasoningEffort'],
     },
     type: 'chat',
   },
@@ -267,7 +287,7 @@ const yapiChatModels: AIChatModelCard[] = [
       ],
     },
     settings: {
-      extendParams: ['hy3ReasoningEffort'],
+      extendParams: ['step3_5ReasoningEffort'],
     },
     type: 'chat',
   },
